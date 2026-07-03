@@ -1,3 +1,5 @@
+use std::{collections::HashSet, hash::Hash};
+
 use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
@@ -31,3 +33,43 @@ pub fn find_value_inbetween<T: PartialOrd>(
     }
     None
 }
+
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ExactLengthBuffer<T> {
+    inner: Vec<T>,
+    len: usize,
+}
+
+impl<T> ExactLengthBuffer<T> {
+    pub fn new(len: usize) -> Self {
+        Self { inner: Vec::new(), len }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    
+    pub fn len_mut(&mut self) -> &mut usize {
+        &mut self.len
+    }
+
+    pub fn store(&mut self, item: T) {
+        self.inner.push(item);
+
+        // Ensure buffer size
+        if self.len < self.inner.len() {
+            // Remove the oldest item
+            self.inner.swap_remove(0);            
+        }
+    }
+
+    pub fn remove(&mut self, idx: usize) -> T {
+        self.inner.swap_remove(idx)
+    }
+    
+    pub fn inner(&self) -> &[T] {
+        &self.inner
+    }
+}
+

@@ -26,6 +26,7 @@ macro_rules! create_window_states {
     };
 }
 
+// Create windows for different parts of the application
 create_window_states! (pub, Settings => {  }, Plugins => {  }, Help => {  });
 
 impl WindowsManager {

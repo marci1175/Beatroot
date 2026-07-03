@@ -1,10 +1,10 @@
 use std::{path::PathBuf, sync::Arc};
 
 use eframe::{App, CreationContext};
-use egui::{RichText, vec2};
+use egui::{Color32, RichText, vec2};
 
 use crate::{
-    IS_DEBUG, project_manager::open_project, ui::{panels::lib::{Panel, PanelStates, create_panels}, windows::WindowsManager},
+    IS_DEBUG, internals::utils::ExactLengthBuffer, project_manager::open_project, ui::{panels::lib::{Panel, PanelStates, create_panels}, windows::WindowsManager},
 };
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -17,7 +17,7 @@ pub struct Application {
     panels: Vec<Panel>,
 
     /// Recently opened project's paths
-    recently_opened: Vec<PathBuf>,
+    recently_opened: ExactLengthBuffer<PathBuf>,
 
     /// If the user has saved a project or opened an existing one this path will point to that file which has been opened.
     save_path: Option<PathBuf>,
@@ -37,7 +37,7 @@ impl Default for Application {
             panels: create_panels(),
 
             // Recently opened project paths
-            recently_opened: Vec::new(),
+            recently_opened: ExactLengthBuffer::new(10),
 
             // If no paths were logged then this should be None.
             save_path: None,
@@ -79,20 +79,36 @@ impl App for Application {
                             .add_filter("Beatroot Project", &["btrt"])
                             .pick_file()
                         {
+                            // Open the actual project
                             open_project(&path);
+
+                            // Save opened path to recently opened projects
+                            // The number of recently opened projects are capped inside the type.
+                            self.recently_opened.store(path);
                         }
                     }
                     ui.menu_button("Open Recent", |ui| {
                         ui.allocate_ui(vec2(250., 0.), |ui| {
                             ui.label("Recent Projects");
                             ui.separator();
-                            for (idx, path) in self.recently_opened.iter().enumerate() {
-                                if ui
-                                    .button(RichText::from(format!("{idx}. {}", path.display())))
-                                    .clicked()
-                                {
-                                    open_project(path);
-                                }
+
+                            // Display the paths in chronological order
+                            for (idx, path) in self.recently_opened.clone().inner().iter().enumerate().rev() {
+                                ui.horizontal(|ui| {
+                                    if ui
+                                        .button(RichText::from(format!("{idx}. {}", path.display())))
+                                        .clicked()
+                                    {
+                                        open_project(path);
+                                    }
+
+                                    if ui
+                                        .button(RichText::from("Remove").color(Color32::RED))
+                                        .clicked()
+                                    {
+                                        self.recently_opened.remove(idx);
+                                    }
+                                });
                             }
                         });
                     });
@@ -105,18 +121,17 @@ impl App for Application {
 
                 ui.menu_button("View", |_ui| {});
 
-                if ui.button("Plugins").clicked() {}
+                if ui.button("Plugins").clicked() {
+                    self.opened_windows.plugins = !self.opened_windows.plugins;
+                }
 
-                if ui.button("Settings").clicked() {}
+                if ui.button("Settings").clicked() {
+                    self.opened_windows.settings = !self.opened_windows.settings;
+                }
 
-                ui.menu_button("Help", |ui| {
-                    ui.label("Build information");
-                    ui.label(format!("Build: {}{}", env!("CARGO_PKG_VERSION"), {
-                        if IS_DEBUG { "debug" } else { "release" }
-                    }));
-                    ui.separator();
-                    ui.hyperlink_to("API documentation", "https://www.google.com")
-                });
+                if ui.button("Help").clicked() {
+                    self.opened_windows.help = !self.opened_windows.help;
+                }
 
             });
         });
