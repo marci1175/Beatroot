@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, rc::Rc, sync::Arc};
 
 use eframe::{App, CreationContext};
 use egui::{Color32, RichText, vec2};
@@ -11,20 +11,20 @@ use crate::{
 #[serde(default)]
 pub struct Application {
     /// The state of the panels inside, every panel state is accessible from the other one.
-    panel_states: Arc<PanelStates>,
+    pub panel_states: Arc<PanelStates>,
 
     /// The list of panels that are present in the application.
-    panels: Vec<Panel>,
+    pub panels: Vec<Panel>,
 
     /// Recently opened project's paths
-    recently_opened: ExactLengthBuffer<PathBuf>,
+    pub recently_opened: ExactLengthBuffer<PathBuf>,
 
     /// If the user has saved a project or opened an existing one this path will point to that file which has been opened.
-    save_path: Option<PathBuf>,
+    pub save_path: Option<PathBuf>,
 
     /// This field indicates which floating windows are enabled (visible).
     #[serde(skip)]
-    opened_windows: WindowsManager,
+    pub window_mngr: WindowsManager,
 }
 
 impl Default for Application {
@@ -43,7 +43,7 @@ impl Default for Application {
             save_path: None,
 
             // A struct indicating which windows are enabled
-            opened_windows: WindowsManager::default(),
+            window_mngr: WindowsManager::default(),
         }
     }
 }
@@ -122,15 +122,15 @@ impl App for Application {
                 ui.menu_button("View", |_ui| {});
 
                 if ui.button("Plugins").clicked() {
-                    self.opened_windows.plugins = !self.opened_windows.plugins;
+                    self.window_mngr.plugins = !self.window_mngr.plugins;
                 }
 
                 if ui.button("Settings").clicked() {
-                    self.opened_windows.settings = !self.opened_windows.settings;
+                    self.window_mngr.settings = !self.window_mngr.settings;
                 }
 
                 if ui.button("Help").clicked() {
-                    self.opened_windows.help = !self.opened_windows.help;
+                    self.window_mngr.help = !self.window_mngr.help;
                 }
 
             });
@@ -146,5 +146,8 @@ impl App for Application {
                 panel.toasts.lock().show(ui);
             }
         }
+
+        // Draw egui windows from window manager
+        self.window_mngr.display(ui, Rc::new(&*self));
     }
 }
