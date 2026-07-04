@@ -15,8 +15,6 @@ use egui_toast::{Toast, ToastStyle};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 
-const TRACK_LABEL: Color32 = Color32::ORANGE;
-const TRACK_LABEL_TEXT: Color32 = Color32::WHITE;
 const TRACK_HEIGHT: f32 = 100.0;
 const MINIMUM_TRACK_HEIGHT: f32 = 10.;
 
@@ -26,7 +24,6 @@ const BEAT_WIDTH: usize = 25;
 // Colors
 const BAR_TRACK_SEPARATOR: Color32 = Color32::GRAY;
 const STROKE_WIDTH: f32 = 1.0f32;
-const CURSOR_COLOR: Color32 = Color32::LIGHT_GREEN;
 
 // This indicates that the track label is 4 bars wide
 const TRACK_LABEL_WIDTH: usize = BEAT_WIDTH * 4;
@@ -51,11 +48,11 @@ pub struct SampleInstance {
 }
 
 impl TrackCustomization {
-    fn named_default(nth: usize) -> Self {
+    fn named_default(nth: usize, label_color: Color32, text_color: Color32) -> Self {
         Self {
             label_text: format!("Track {nth}"),
-            label_text_color: TRACK_LABEL_TEXT,
-            label_color: TRACK_LABEL,
+            label_text_color: text_color,
+            label_color: label_color,
             height: TRACK_HEIGHT,
 
             height_set: false,
@@ -80,7 +77,26 @@ pub enum PlaybackState {
     Stopped,
 }
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct PlaylistPreferences {
+    pub waveform_color: Color32,
+    pub default_track_label_color: Color32,
+    pub default_track_label_text_color: Color32,
+    pub cursor_color: Color32,
+}
+
+impl Default for PlaylistPreferences {
+    fn default() -> Self {
+        Self {
+            waveform_color: Color32::WHITE,
+            default_track_label_color: Color32::ORANGE,
+            default_track_label_text_color: Color32::WHITE,
+            cursor_color: Color32::GREEN,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaylistState {
     /// Can be modified with the bpm slider.
     pub bpm: f32,
@@ -98,6 +114,22 @@ pub struct PlaylistState {
     pub samples: IndexMap<Position, SampleInstance>,
 
     pub playback_state: PlaybackState,
+
+    pub playlist_preferences: PlaylistPreferences,
+}
+
+impl Default for PlaylistState {
+    fn default() -> Self {
+        Self {
+            bpm: 120.,
+            cursor_offset: Default::default(),
+            grid_offset: Default::default(),
+            custom_tracks: Default::default(),
+            samples: Default::default(),
+            playback_state: Default::default(),
+            playlist_preferences: PlaylistPreferences::default(),
+        }
+    }
 }
 
 const BPM_PRESETS: &[f32] = &[
@@ -106,6 +138,9 @@ const BPM_PRESETS: &[f32] = &[
 
 pub fn playlist_ui(_this: &Panel, ui: &mut Ui, global_state: Arc<PanelStates>) {
     let state = &global_state.playlist_panel;
+
+    // Get the default track color
+    let preferences = state.read().playlist_preferences.clone();
 
     // Draw the main options / tools for this ui
     ui.horizontal(|ui| {
@@ -202,7 +237,7 @@ pub fn playlist_ui(_this: &Panel, ui: &mut Ui, global_state: Arc<PanelStates>) {
         let y_coord = current_height;
 
         // Try getting the customization state for the current label
-        let label_customization = get_track_customization(state, idx);
+        let label_customization = get_track_customization(state, idx, &preferences);
 
         let top = (y_coord + y_offset_ratio).max(playlist_rect.top());
         let bottom =
@@ -233,6 +268,7 @@ pub fn playlist_ui(_this: &Panel, ui: &mut Ui, global_state: Arc<PanelStates>) {
                 top,
                 bottom,
                 custom_tracks,
+                &preferences,
             );
 
             // Draw separator lines
@@ -244,6 +280,7 @@ pub fn playlist_ui(_this: &Panel, ui: &mut Ui, global_state: Arc<PanelStates>) {
                 y_coord,
                 &label_customization,
                 custom_tracks,
+                &preferences,
             );
 
             // This will automatically set the index to the last visible track's index
@@ -275,6 +312,7 @@ pub fn playlist_ui(_this: &Panel, ui: &mut Ui, global_state: Arc<PanelStates>) {
         usable_playlist_rect,
         &track_lines,
         &beat_lines,
+        &preferences,
     );
 
     // We are going to have multiple layers of responses each capturing something different
@@ -291,6 +329,7 @@ pub fn playlist_ui(_this: &Panel, ui: &mut Ui, global_state: Arc<PanelStates>) {
         &beat_lines,
         first_visible_track_idx,
         &ui_base,
+        &preferences,
     );
 
     // Handle the sample if it is dropped into the playlist.
@@ -310,7 +349,7 @@ pub fn playlist_ui(_this: &Panel, ui: &mut Ui, global_state: Arc<PanelStates>) {
     let cursor_offset = state.read().cursor_offset;
 
     // Draw cursor on playlist
-    draw_cursor(ui, playlist_rect, grid_offset, cursor_offset);
+    draw_cursor(ui, playlist_rect, grid_offset, cursor_offset, &preferences);
 
     // Capture scroll if hovered
     if ui_base.hovered() {
@@ -328,6 +367,7 @@ fn render_samples(
     playlist_rect: Rect,
     track_lines: &[[Pos2; 2]],
     beat_lines: &[[Pos2; 2]],
+    preferences: &PlaylistPreferences,
 ) {
     // Iterate over the samples and decide which one is in frame.
     let samples = state.read().samples.clone();
@@ -349,7 +389,7 @@ fn render_samples(
         };
 
         // Get track customization
-        let _track_customization = get_track_customization(state, pos.track);
+        let _track_customization = get_track_customization(state, pos.track, preferences);
 
         // Calculate rectangle length
         let bps = state.read().bpm / 60.;
@@ -418,9 +458,10 @@ fn render_samples(
             let end = Pos2::new(waveform_rect.right(), middle_y);
 
             // Draw a centerline serving as the indication for silence.
-            ui.painter()
-                .with_clip_rect(playlist_rect)
-                .line([start, end].to_vec(), Stroke::new(1.0_f32, Color32::WHITE));
+            ui.painter().with_clip_rect(playlist_rect).line(
+                [start, end].to_vec(),
+                Stroke::new(1.0_f32, preferences.waveform_color),
+            );
 
             // Iter over all the samples and draw them
             // We are going to ratio this based on the highest/lowest value the output can get which is 1.0 and -1.0
@@ -455,12 +496,12 @@ fn render_samples(
                 // Draw max
                 ui.painter().with_clip_rect(playlist_rect).line(
                     [baseline, Pos2::new(x, middle_y + height_max)].to_vec(),
-                    Stroke::new(column_width, Color32::WHITE),
+                    Stroke::new(column_width, preferences.waveform_color),
                 );
                 // Draw min
                 ui.painter().with_clip_rect(playlist_rect).line(
                     [baseline, Pos2::new(x, middle_y + height_min)].to_vec(),
-                    Stroke::new(column_width, Color32::WHITE),
+                    Stroke::new(column_width, preferences.waveform_color),
                 );
 
                 // Increment index
@@ -582,7 +623,7 @@ fn drop_sample(
                     color: random_color,
                     path: payload.path.clone(),
                     properties: payload.properties.clone(),
-                    waveform_map: waveform_map,
+                    waveform_map,
                 }
             };
 
@@ -606,6 +647,7 @@ fn hover_sample(
     beat_lines: &[[Pos2; 2]],
     first_visible_track_idx: usize,
     ui_base: &egui::Response,
+    preferences: &PlaylistPreferences,
 ) {
     if let Some(payload) = ui_base.dnd_hover_payload::<SampleInstance>() {
         // Get cursor position
@@ -628,7 +670,8 @@ fn hover_sample(
             let starting_y = starting_y.max(playlist_rect.top());
 
             // Fetch track attributes
-            let track_customization = get_track_customization(state, absolute_track_idx);
+            let track_customization =
+                get_track_customization(state, absolute_track_idx, preferences);
 
             // Calculate rectangle length
             let bps = state.read().bpm / 60.;
@@ -660,15 +703,24 @@ fn hover_sample(
     }
 }
 
-fn get_track_customization(state: &RwLock<PlaylistState>, idx: usize) -> TrackCustomization {
-    match state.read().custom_tracks.get(&idx) {
+fn get_track_customization(
+    state: &RwLock<PlaylistState>,
+    idx: usize,
+    preferences: &PlaylistPreferences,
+) -> TrackCustomization {
+    let read = state.read();
+    match read.custom_tracks.get(&idx) {
         Some(custom) => custom.clone(),
-        None => TrackCustomization::named_default(idx),
+        None => TrackCustomization::named_default(
+            idx,
+            preferences.default_track_label_color,
+            preferences.default_track_label_text_color,
+        ),
     }
 }
 
 /// Draws main cursor (Indicates where we are in current playlist)
-fn draw_cursor(ui: &mut Ui, playlist_rect: Rect, grid_offset: Vec2, cursor_offset: f32) {
+fn draw_cursor(ui: &mut Ui, playlist_rect: Rect, grid_offset: Vec2, cursor_offset: f32, preferences: &PlaylistPreferences) {
     ui.painter().line(
         vec![
             Pos2::new(
@@ -680,7 +732,7 @@ fn draw_cursor(ui: &mut Ui, playlist_rect: Rect, grid_offset: Vec2, cursor_offse
                 playlist_rect.bottom(),
             ),
         ],
-        Stroke::new(STROKE_WIDTH, CURSOR_COLOR),
+        Stroke::new(STROKE_WIDTH, preferences.cursor_color),
     );
 }
 
@@ -732,6 +784,7 @@ fn track_label<'a>(
     top: f32,
     bottom: f32,
     custom_tracks: &mut HashMap<usize, TrackCustomization>,
+    preferences: &PlaylistPreferences,
 ) {
     let label_rect = Rect::from_two_pos(
         Pos2 {
@@ -762,7 +815,14 @@ fn track_label<'a>(
 
     // Detect if it has been right clicked on and store a entry in the customization list.
     if label.secondary_clicked() && !custom_tracks.contains_key(&idx) {
-        custom_tracks.insert(idx, TrackCustomization::named_default(idx));
+        custom_tracks.insert(
+            idx,
+            TrackCustomization::named_default(
+                idx,
+                preferences.default_track_label_color,
+                preferences.default_track_label_text_color,
+            ),
+        );
     }
 
     // We should only allow the context menu to be opened if we already have the track customizations saved in the list.
@@ -799,7 +859,13 @@ fn track_label<'a>(
         if ctx_menu.is_none() {
             // If the context menu is closed we should check if the customization entry has been modified
             // If not just remove it to save up memory
-            if *customization_state == TrackCustomization::named_default(idx) {
+            if *customization_state
+                == TrackCustomization::named_default(
+                    idx,
+                    preferences.default_track_label_color,
+                    preferences.default_track_label_text_color,
+                )
+            {
                 custom_tracks.remove(&idx);
             }
         }
@@ -814,6 +880,7 @@ fn track_separator(
     y_coord: f32,
     label_customization: &TrackCustomization,
     custom_tracks: &mut HashMap<usize, TrackCustomization>,
+    preferences: &PlaylistPreferences,
 ) -> [Pos2; 2] {
     // Draw track separator lines
     let separator_points = [
@@ -846,7 +913,14 @@ fn track_separator(
 
     // Check if a drag has been started
     if separator.drag_started() && !custom_tracks.contains_key(&idx) {
-        custom_tracks.insert(idx, TrackCustomization::named_default(idx));
+        custom_tracks.insert(
+            idx,
+            TrackCustomization::named_default(
+                idx,
+                preferences.default_track_label_color,
+                preferences.default_track_label_text_color,
+            ),
+        );
     }
 
     // Check if the item is inside the list

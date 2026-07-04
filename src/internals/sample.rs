@@ -127,7 +127,7 @@ pub fn generate_sample_waveform(path: &PathBuf) -> anyhow::Result<Vec<[f32; 2]>>
     // Average out input over windows of the input
     let value_pairs = min_max_in_window(&avg_channel_input, 1024);
 
-    return Ok(value_pairs);
+    Ok(value_pairs)
 }
 
 fn avg_values_in_window(input: &[f32], window_size: usize) -> Vec<f32> {

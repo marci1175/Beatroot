@@ -471,7 +471,7 @@ fn add_sample_to_workspace(
                     alias: object_name,
                     is_color_synced: true,
                     color: random_color_with_opacity(120),
-                    waveform_map: waveform_map,
+                    waveform_map,
                 },
             );
     };

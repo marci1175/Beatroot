@@ -1,11 +1,27 @@
-use std::{path::PathBuf, rc::Rc, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
 use eframe::{App, CreationContext};
 use egui::{Color32, RichText, vec2};
 
 use crate::{
-    IS_DEBUG, internals::utils::ExactLengthBuffer, project_manager::open_project, ui::{panels::lib::{Panel, PanelStates, create_panels}, windows::WindowsManager},
+    internals::utils::ExactLengthBuffer,
+    project_manager::open_project,
+    ui::{
+        panels::lib::{Panel, PanelStates, create_panels},
+        windows::WindowsManager,
+    },
 };
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+#[derive(Default)]
+pub struct AppRoot {
+    /// This field indicates which floating windows are enabled (visible).
+    #[serde(skip)]
+    pub window_mngr: WindowsManager,
+
+    pub application: Application,
+}
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -21,10 +37,6 @@ pub struct Application {
 
     /// If the user has saved a project or opened an existing one this path will point to that file which has been opened.
     pub save_path: Option<PathBuf>,
-
-    /// This field indicates which floating windows are enabled (visible).
-    #[serde(skip)]
-    pub window_mngr: WindowsManager,
 }
 
 impl Default for Application {
@@ -41,14 +53,11 @@ impl Default for Application {
 
             // If no paths were logged then this should be None.
             save_path: None,
-
-            // A struct indicating which windows are enabled
-            window_mngr: WindowsManager::default(),
         }
     }
 }
 
-impl Application {
+impl AppRoot {
     pub fn new(cc: &CreationContext) -> Self {
         if let Some(storage) = cc.storage {
             return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
@@ -58,7 +67,7 @@ impl Application {
     }
 }
 
-impl App for Application {
+impl App for AppRoot {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
@@ -70,22 +79,21 @@ impl App for Application {
         egui::Panel::top("application_options").show_inside(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.menu_button("File", |ui| {
-                    if ui.button("New Project").clicked() {}
+                    ui.button("New Project").clicked();
 
                     ui.separator();
 
-                    if ui.button("Open").clicked() {
-                        if let Some(path) = rfd::FileDialog::new()
+                    if ui.button("Open").clicked()
+                        && let Some(path) = rfd::FileDialog::new()
                             .add_filter("Beatroot Project", &["btrt"])
                             .pick_file()
-                        {
-                            // Open the actual project
-                            open_project(&path);
+                    {
+                        // Open the actual project
+                        open_project(&path);
 
-                            // Save opened path to recently opened projects
-                            // The number of recently opened projects are capped inside the type.
-                            self.recently_opened.store(path);
-                        }
+                        // Save opened path to recently opened projects
+                        // The number of recently opened projects are capped inside the type.
+                        self.application.recently_opened.store(path);
                     }
                     ui.menu_button("Open Recent", |ui| {
                         ui.allocate_ui(vec2(250., 0.), |ui| {
@@ -93,10 +101,21 @@ impl App for Application {
                             ui.separator();
 
                             // Display the paths in chronological order
-                            for (idx, path) in self.recently_opened.clone().inner().iter().enumerate().rev() {
+                            for (idx, path) in self
+                                .application
+                                .recently_opened
+                                .clone()
+                                .inner()
+                                .iter()
+                                .enumerate()
+                                .rev()
+                            {
                                 ui.horizontal(|ui| {
                                     if ui
-                                        .button(RichText::from(format!("{idx}. {}", path.display())))
+                                        .button(RichText::from(format!(
+                                            "{idx}. {}",
+                                            path.display()
+                                        )))
                                         .clicked()
                                     {
                                         open_project(path);
@@ -106,7 +125,7 @@ impl App for Application {
                                         .button(RichText::from("Remove").color(Color32::RED))
                                         .clicked()
                                     {
-                                        self.recently_opened.remove(idx);
+                                        self.application.recently_opened.remove(idx);
                                     }
                                 });
                             }
@@ -115,7 +134,7 @@ impl App for Application {
 
                     ui.separator();
 
-                    if ui.button("Save As").clicked() {}
+                    ui.button("Save As").clicked();
                     if ui.button("Save").clicked() {}
                 });
 
@@ -132,14 +151,13 @@ impl App for Application {
                 if ui.button("Help").clicked() {
                     self.window_mngr.help = !self.window_mngr.help;
                 }
-
             });
         });
 
         // Draw detachable panels
-        for panel in self.panels.iter() {
+        for panel in self.application.panels.iter() {
             // Draw/update panel
-            panel.display(ui, self.panel_states.clone());
+            panel.display(ui, self.application.panel_states.clone());
 
             // If the panel is not detached we can display its toasts in the root ui
             if !panel.detached.load(std::sync::atomic::Ordering::Relaxed) {
@@ -148,6 +166,6 @@ impl App for Application {
         }
 
         // Draw egui windows from window manager
-        self.window_mngr.display(ui, Rc::new(&*self));
+        self.window_mngr.display(ui, &mut self.application);
     }
 }
