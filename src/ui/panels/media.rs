@@ -169,9 +169,6 @@ pub fn mediapicker_ui(
                             workspace_samples,
                             audio_handler.clone(),
                         );
-                        entry.context_menu(|ui| {
-                            ui.label(RichText::from(path.to_string_lossy()).weak());
-                        });
                     }
                 }
                 // Draw file system selector
@@ -243,9 +240,6 @@ pub fn mediapicker_ui(
                             workspace_samples,
                             audio_handler.clone(),
                         );
-                        entry.context_menu(|ui| {
-                            ui.label(RichText::from(path.to_string_lossy()).weak());
-                        });
                     }
                 }
             }
@@ -711,12 +705,14 @@ fn playbackable_sample_preview(
                         .unwrap_or_default();
 
                     // The sample's name
-                    ui.label(RichText::from(name.to_string_lossy()).strong());
+                    ui.label(RichText::from(name.to_string_lossy()).strong()).on_hover_text(path.to_string_lossy());
 
                     // Create a slider that takes up all the width
                     ui.scope(|ui| {
                         ui.spacing_mut().slider_width = ui.available_width();
-                        // Allow the user to seek in the sample
+                        
+                        ui.add_enabled_ui(sample_length.as_secs_f32() != 0.0, |ui| {
+                            // Allow the user to seek in the sample
                         let seeker = ui.add(
                             egui::Slider::new(
                                 &mut current_position,
@@ -745,6 +741,7 @@ fn playbackable_sample_preview(
                                 );
                             }
                         }
+                        });
                     });
 
                     // Automatically call repaint if it is currently playing to move the progression slider smoothly
