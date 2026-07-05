@@ -9,6 +9,7 @@ use parking_lot::{Mutex, RwLock};
 use strum::IntoDiscriminant;
 
 use crate::{
+    audio::{self, lib::AudioThreadHandler},
     internals::utils::random_value,
     ui::panels::{
         media::{MediaPanel, mediapicker_ui},
@@ -75,19 +76,28 @@ pub struct Panel {
 
 impl Panel {
     /// Displays the given panel based on its properties.
-    pub fn display(&self, ui: &mut Ui, global_state: Arc<PanelStates>) {
+    pub fn display(
+        &self,
+        ui: &mut Ui,
+        global_state: Arc<PanelStates>,
+        audio_handler: Option<Arc<AudioThreadHandler>>,
+    ) {
         // Match the kind of panel we want to display
         match &self.id {
             PanelId::Media => display_panel(
                 self,
                 ui,
-                global_state.clone(),
+                (global_state.clone(), audio_handler),
                 "Media Picker",
                 mediapicker_ui,
             ),
-            PanelId::Playlist => {
-                display_panel(self, ui, global_state.clone(), "Playlist", playlist_ui)
-            }
+            PanelId::Playlist => display_panel(
+                self,
+                ui,
+                (global_state.clone(), audio_handler),
+                "Playlist",
+                playlist_ui,
+            ),
             PanelId::Root => todo!(),
             PanelId::Mixer => todo!(),
         };

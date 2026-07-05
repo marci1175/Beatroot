@@ -1,4 +1,6 @@
-use egui::{Align2, Color32, InnerResponse, Panel, RichText, ScrollArea, Sense, Ui};
+use egui::{
+    Align2, Color32, InnerResponse, Panel, RichText, ScrollArea, Sense, Ui, UiBuilder, vec2,
+};
 use strum::{Display, VariantArray};
 
 use crate::{app::Application, ui::windows::SettingsState};
@@ -70,43 +72,57 @@ pub fn display_settings_window(
                         });
                 });
 
-            // Create a scrollable area for the specific tab
-            ScrollArea::both()
-                .auto_shrink([false, false])
+            egui::Frame::NONE
+                .inner_margin(egui::Margin::same(8))
                 .show(ui, |ui| {
-                    match window_state.current_tab {
-                        SettingsType::General => {}
-                        SettingsType::Plugins => {}
-                        SettingsType::Playlist => {
-                            let mut playlist_guard =
-                                global_state.panel_states.playlist_panel.write();
+                    // Create a scrollable area for the specific tab
+                    ScrollArea::both()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            match window_state.current_tab {
+                                SettingsType::General => {}
+                                SettingsType::Plugins => {}
+                                SettingsType::Playlist => {
+                                    let mut playlist_guard =
+                                        global_state.panel_states.playlist_panel.write();
 
-                            ui.label(RichText::from("Appearance").strong());
-                            ui.horizontal(|ui| {
-                                ui.label("Waveform color");
-                                ui.color_edit_button_srgba(
-                                    &mut playlist_guard.playlist_preferences.waveform_color,
-                                );
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("Default track label color");
-                                ui.color_edit_button_srgba(
-                                    &mut playlist_guard.playlist_preferences.default_track_label_color,
-                                );
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("Default track text color");
-                                ui.color_edit_button_srgba(
-                                    &mut playlist_guard.playlist_preferences.default_track_label_text_color,
-                                );
-                            });
-                        }
-                        SettingsType::Mixer => {
-                            ui.label(RichText::from("Appearance").strong());
-                            // ui.color_edit_button_rgb(global_state.preferences);
-                        }
-                        SettingsType::Performance => {}
-                    }
+                                    ui.label(RichText::from("Appearance").strong());
+                                    ui.horizontal(|ui| {
+                                        ui.label("Waveform color");
+                                        ui.color_edit_button_srgba(
+                                            &mut playlist_guard.playlist_preferences.waveform_color,
+                                        );
+                                    });
+                                    ui.horizontal(|ui| {
+                                        ui.label("Default track label color");
+                                        ui.color_edit_button_srgba(
+                                            &mut playlist_guard
+                                                .playlist_preferences
+                                                .default_track_label_color,
+                                        );
+                                    });
+                                    ui.horizontal(|ui| {
+                                        ui.label("Default track text color");
+                                        ui.color_edit_button_srgba(
+                                            &mut playlist_guard
+                                                .playlist_preferences
+                                                .default_track_label_text_color,
+                                        );
+                                    });
+                                    ui.horizontal(|ui| {
+                                        ui.label("Cursor color");
+                                        ui.color_edit_button_srgba(
+                                            &mut playlist_guard.playlist_preferences.cursor_color,
+                                        );
+                                    });
+                                }
+                                SettingsType::Mixer => {
+                                    ui.label(RichText::from("Appearance").strong());
+                                    // ui.color_edit_button_rgb(global_state.preferences);
+                                }
+                                SettingsType::Performance => {}
+                            }
+                        });
                 });
         })
 }

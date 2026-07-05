@@ -16,9 +16,7 @@ pub fn display_help_window(
     global_state: &Application,
     _window_state: &mut HelpState,
 ) -> Option<InnerResponse<Option<()>>> {
-    egui::Window::new("Help")
-        .id("asdasd".into())
-        .show(ui.ctx(), |ui| {
-            ui.label(format!("{:?}", global_state.panels[0].id));
-        })
+    egui::Window::new("Help").show(ui.ctx(), |ui| {
+        ui.label(format!("{:?}", global_state.panels[0].id));
+    })
 }

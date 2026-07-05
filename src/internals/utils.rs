@@ -1,3 +1,8 @@
+use std::{
+    hash::{DefaultHasher, Hash, Hasher},
+    path::PathBuf,
+};
+
 use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
@@ -71,4 +76,10 @@ impl<T> ExactLengthBuffer<T> {
     pub fn inner(&self) -> &[T] {
         &self.inner
     }
+}
+
+pub fn path_to_number(path: &PathBuf) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    path.hash(&mut hasher);
+    hasher.finish()
 }

@@ -1,20 +1,28 @@
-use std::{ffi::OsStr, path::PathBuf, sync::Arc};
+use std::{
+    ffi::OsStr,
+    hash::{DefaultHasher, Hash},
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 
 use chrono::Utc;
-use egui::{Color32, Id, Response, RichText, ScrollArea, Sense, Ui, UiBuilder};
+use egui::{Color32, Id, Response, RichText, ScrollArea, Sense, Ui, UiBuilder, vec2};
 use egui_toast::{Toast, ToastStyle, Toasts};
 use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
+use rodio::Source;
 
 use crate::{
+    audio::lib::AudioThreadHandler,
     internals::{
         fs::{FsMap, create_entry_map},
         sample::{SampleProperties, fetch_sample_properties, generate_sample_waveform},
-        utils::CacheState,
+        utils::{CacheState, path_to_number},
     },
     ui::panels::{
         lib::{Panel, PanelStates, display_error_as_toast, random_color_with_opacity},
-        playlist::SampleInstance,
+        playlist::{PlaybackState, SampleInstance},
     },
 };
 
@@ -109,7 +117,11 @@ pub enum MediaSelectorState {
 }
 
 /// This is what gets called when the panel is either attached or detached
-pub fn mediapicker_ui(this: &Panel, ui: &mut Ui, global_state: Arc<PanelStates>) {
+pub fn mediapicker_ui(
+    this: &Panel,
+    ui: &mut Ui,
+    (global_state, audio_handler): (Arc<PanelStates>, Option<Arc<AudioThreadHandler>>),
+) {
     let state = &global_state.media_panel;
 
     let media_selector_state = state.read().media_selector_state;
@@ -155,6 +167,7 @@ pub fn mediapicker_ui(this: &Panel, ui: &mut Ui, global_state: Arc<PanelStates>)
                             bookmark.alias.into(),
                             path.clone(),
                             workspace_samples,
+                            audio_handler.clone(),
                         );
                         entry.context_menu(|ui| {
                             ui.label(RichText::from(path.to_string_lossy()).weak());
@@ -205,6 +218,7 @@ pub fn mediapicker_ui(this: &Panel, ui: &mut Ui, global_state: Arc<PanelStates>)
                                 dragged_sample_props,
                                 workspace_samples,
                                 this.toasts.clone(),
+                                audio_handler.clone(),
                             );
                         });
                 }
@@ -227,6 +241,7 @@ pub fn mediapicker_ui(this: &Panel, ui: &mut Ui, global_state: Arc<PanelStates>)
                             sample.alias.into(),
                             path.clone(),
                             workspace_samples,
+                            audio_handler.clone(),
                         );
                         entry.context_menu(|ui| {
                             ui.label(RichText::from(path.to_string_lossy()).weak());
@@ -541,6 +556,7 @@ fn display_filesystem_map(
     dragged_sample_props: &mut SampleProperties,
     workspace_samples: &IndexMap<PathBuf, WorkspaceSampleAttributes>,
     toasts: Arc<Mutex<Toasts>>,
+    audio_handler: Option<Arc<AudioThreadHandler>>,
 ) {
     for entry in &mut map.objects {
         match entry {
@@ -555,6 +571,7 @@ fn display_filesystem_map(
                     name.clone(),
                     path.clone(),
                     workspace_samples,
+                    audio_handler.clone(),
                 );
             }
             crate::internals::fs::FsObject::Symlink(os_string) => {
@@ -572,6 +589,7 @@ fn display_filesystem_map(
                             dragged_sample_props,
                             workspace_samples,
                             toasts.clone(),
+                            audio_handler.clone(),
                         ),
                         // If we failed to load the directory in we can always retry
                         None => {
@@ -601,6 +619,7 @@ fn draggable_sample(
     name: std::ffi::OsString,
     path: PathBuf,
     workspace_samples: &IndexMap<PathBuf, WorkspaceSampleAttributes>,
+    audio_handler: Option<Arc<AudioThreadHandler>>,
 ) -> Response {
     let entry = draggable_sample_label(
         ui,
@@ -642,7 +661,219 @@ fn draggable_sample(
         }
     }
 
+    // If the label is right clicked on - it will automatically display a sample player.
+    playbackable_sample_preview(toasts, name, path, audio_handler, &entry_response);
+
     entry_response
+}
+
+fn playbackable_sample_preview(
+    toasts: Arc<Mutex<Toasts>>,
+    name: std::ffi::OsString,
+    path: PathBuf,
+    audio_handler: Option<Arc<AudioThreadHandler>>,
+    entry_response: &Response,
+) {
+    egui::Popup::context_menu(entry_response)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            // Allocate a large enough space sideways
+            ui.allocate_space(vec2(100., 1.));
+
+            // Only enable the whole previewer ui if there is a valid audio thread
+            let sample_previewer = ui.add_enabled_ui(audio_handler.is_some(), |ui| {
+                ui.vertical_centered(|ui| {
+                    // The pathbuf is hashed and is provided as a usize
+                    let id = path_to_number(&path);
+
+                    // Try getting the current sample's entry from the available players
+                    let entry = audio_handler.clone().and_then(|handler| {
+                        handler
+                            .sample_players
+                            .get(&id)
+                            .map(|query| query.value().clone())
+                    });
+
+                    // Get the attributes of the current player if there are any
+                    let is_paused = entry
+                        .as_ref()
+                        .map(|player| player.player.is_paused())
+                        .unwrap_or(true);
+                    let mut current_position = entry
+                        .as_ref()
+                        .map(|sample_player| {
+                            sample_player.player.get_pos().as_secs_f32() * sample_player.player.speed()
+                        })
+                        .unwrap_or_default();
+                    let sample_length = entry
+                        .as_ref()
+                        .and_then(|sample_player| sample_player.total_duration)
+                        .unwrap_or_default();
+
+                    // The sample's name
+                    ui.label(RichText::from(name.to_string_lossy()).strong());
+
+                    // Create a slider that takes up all the width
+                    ui.scope(|ui| {
+                        ui.spacing_mut().slider_width = ui.available_width();
+                        // Allow the user to seek in the sample
+                        let seeker = ui.add(
+                            egui::Slider::new(
+                                &mut current_position,
+                                0.0..=sample_length.as_secs_f32(),
+                            )
+                            .show_value(false),
+                        );
+
+                        // If the seeker has been changed, get its value and seek the sample to that duration
+                        if seeker.drag_stopped() {
+                            let audio_handler = audio_handler
+                                .clone()
+                                .expect("Audio handler thread not initalized.");
+
+                            // Get this player and try to seek the sample thorugh the player
+                            if let Some(mut query) = audio_handler.sample_players.get_mut(&id) {
+                                let sample_player = query.value_mut();
+
+                                // Display an error if we encountered one during seeking
+                                display_error_as_toast(
+                                    sample_player
+                                        .player
+                                        .try_seek(Duration::from_secs_f32(current_position)),
+                                    ToastStyle::default(),
+                                    toasts.clone(),
+                                );
+                            }
+                        }
+                    });
+
+                    // Automatically call repaint if it is currently playing to move the progression slider smoothly
+                    if !is_paused {
+                        // Repaint ui
+                        ui.ctx().request_repaint();
+                    }
+
+                    // Main controls for playback
+                    ui.horizontal(|ui| {
+                        ui.add_enabled_ui(is_paused, |ui| {
+                            // Draw play button
+                            if ui.button("Play").clicked() {
+                                let audio_handler = audio_handler
+                                    .clone()
+                                    .expect("Audio handler thread not initalized.");
+
+                                // Try checking if there is already a player created since if a sample is paused we would like to continue from there
+                                if let Some(query) = audio_handler.sample_players.get(&id) {
+                                    let sample_player = query.value();
+
+                                    // Start the player
+                                    sample_player.player.play();
+                                } else {
+                                    // Request the audio handler thread to create a player for this specific id
+                                    // Upon successful creation load the player with the desired sample.
+                                    let reply = audio_handler
+                                        .create_exchange(
+                                            crate::audio::lib::AudioThreadMessage::CreatePlayer(id),
+                                        )
+                                        .and_then(|reply| {
+                                            let player_id = reply.try_as_created_player().unwrap();
+
+                                            // Tell the audio thread to load the player
+                                            audio_handler.create_exchange(
+                                                crate::audio::lib::AudioThreadMessage::LoadPlayer {
+                                                    id: player_id,
+                                                    fs_src: path,
+                                                },
+                                            )
+                                        });
+
+                                    // Display the error if there were any
+                                    display_error_as_toast(
+                                        reply,
+                                        ToastStyle::default(),
+                                        toasts.clone(),
+                                    );
+                                }
+                            }
+                        });
+
+                        ui.add_enabled_ui(!is_paused, |ui| {
+                            // Draw pause button (this does not reset the player)
+                            if ui.button("Pause").clicked() {
+                                let audio_handler = audio_handler
+                                    .clone()
+                                    .expect("Audio handler thread not initalized.");
+
+                                if let Some(query) = audio_handler.sample_players.get(&id) {
+                                    let sample_player = query.value();
+
+                                    // If the sample has already been play through dont let it be paused instead just reset the player if its stopped after its finished
+                                    if sample_player.player.empty() {
+                                        sample_player.player.stop();
+                                    } else {
+                                        sample_player.player.pause();
+                                    }
+                                }
+                            }
+
+                            // Draw stop button (this resets the player)
+                            if ui.button("Stop").clicked() {
+                                let audio_handler = audio_handler
+                                    .clone()
+                                    .expect("Audio handler thread not initalized.");
+
+                                // We shouldnt remove the player even if it has been stopped since the preferences are stored with the players themselves. (Besides they dont really take up that much space)
+                                if let Some(query) = audio_handler.sample_players.get(&id) {
+                                    let sample_player = query.value();
+
+                                    sample_player.player.stop();
+                                }
+                            }
+                        });
+
+                        // If there is a player for this sample then enable the options for the playback
+                        ui.add_enabled_ui(entry.is_some(), |ui| {
+                            ui.menu_button("Options", |ui| {
+                                // This only gets ran if the menu button is open.
+                                let audio_handler = audio_handler
+                                        .clone()
+                                        .expect("Audio handler thread not initalized.");
+
+                                // Fetch a mutable reference to the playback preferences
+                                if let Some(mut query) = audio_handler.sample_players.get_mut(&id) {
+                                    let preferences = &mut query.value_mut().preferences;
+
+                                    let volume = ui.horizontal(|ui| {
+                                        ui.label("Volume");
+                                        ui.add(egui::Slider::new(&mut preferences.volume, 0.0..=2.0).custom_formatter(|vol, _| format!("{:.0}", vol * 100.)))
+                                    });
+                                    let speed = ui.horizontal(|ui| {
+                                        ui.label("Speed");
+                                        ui.add(egui::Slider::new(&mut preferences.speed, 0.2..=5.0))
+                                    });
+
+                                    // If either one of the sliders have been changed send the message to the thread to update the player
+                                    if speed.inner.changed() || volume.inner.changed() {
+                                        let preferences = preferences.clone();
+                                        drop(query);
+
+                                        display_error_as_toast(
+                                                audio_handler.create_exchange(
+                                                crate::audio::lib::AudioThreadMessage::UpdatePlayerPreferences { id, preferences }),
+                                            ToastStyle::default(), toasts.clone()
+                                        );
+                                    }
+                                }
+                            });
+                        });
+                    });
+                });
+            });
+
+            sample_previewer
+                .response
+                .on_disabled_hover_text("Audio handler thread is uninitalized.");
+        });
 }
 
 fn draggable_sample_label(

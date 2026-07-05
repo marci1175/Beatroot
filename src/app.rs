@@ -1,9 +1,10 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{mem::MaybeUninit, path::PathBuf, sync::Arc};
 
 use eframe::{App, CreationContext};
-use egui::{Color32, RichText, vec2};
+use egui::{Color32, RichText, Sense, vec2};
 
 use crate::{
+    audio::lib::AudioThreadHandler,
     internals::utils::ExactLengthBuffer,
     project_manager::open_project,
     ui::{
@@ -20,6 +21,7 @@ pub struct AppRoot {
     #[serde(skip)]
     pub window_mngr: WindowsManager,
 
+    /// Every component in the application exists in the Application struct.
     pub application: Application,
 }
 
@@ -37,6 +39,10 @@ pub struct Application {
 
     /// If the user has saved a project or opened an existing one this path will point to that file which has been opened.
     pub save_path: Option<PathBuf>,
+
+    #[serde(skip)]
+    /// The audio handler is a set of channels and atomic data which ensures audio runs on a different thread than main and that both are syncronized.
+    pub audio_handler: Option<Arc<AudioThreadHandler>>,
 }
 
 impl Default for Application {
@@ -53,17 +59,29 @@ impl Default for Application {
 
             // If no paths were logged then this should be None.
             save_path: None,
+
+            // If there was no audio handler added then just handle it with None.
+            audio_handler: None,
         }
     }
 }
 
 impl AppRoot {
-    pub fn new(cc: &CreationContext) -> Self {
+    pub fn new(cc: &CreationContext, audio_thread_handler: AudioThreadHandler) -> Self {
+        // Create a default app root state
+        let mut app_root = AppRoot::default();
+
+        // Load in state if it has been stored already
         if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            app_root = eframe::get_value::<AppRoot>(storage, eframe::APP_KEY).unwrap_or_default();
         }
 
-        Default::default()
+        // Set the application's audio thread handler.
+        // This will get initalized every time so we can actually use a maybe uninit since its initalized every application startup.
+        app_root.application.audio_handler = Some(Arc::new(audio_thread_handler));
+
+        // Return state
+        app_root
     }
 }
 
@@ -75,6 +93,20 @@ impl App for AppRoot {
     fn update(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {}
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Check if the audio handler has been initalized, if not, display the error in the ui, but let the user proceed.
+        if self.application.audio_handler.is_none() {
+            if ui.label(
+                    RichText::new("⚠ No available audio output ⚠")
+                        .small()
+                        .color(ui.visuals().warn_fg_color),
+                )
+                .on_hover_text("The application could not find a viable default audio output. Click for more info.").interact(Sense::click()).clicked() {
+                    self.window_mngr.settings = true;
+                };
+
+            ui.separator();
+        }
+
         // Create the main options bar
         egui::Panel::top("application_options").show_inside(ui, |ui| {
             ui.horizontal(|ui| {
@@ -157,7 +189,11 @@ impl App for AppRoot {
         // Draw detachable panels
         for panel in self.application.panels.iter() {
             // Draw/update panel
-            panel.display(ui, self.application.panel_states.clone());
+            panel.display(
+                ui,
+                self.application.panel_states.clone(),
+                self.application.audio_handler.clone(),
+            );
 
             // If the panel is not detached we can display its toasts in the root ui
             if !panel.detached.load(std::sync::atomic::Ordering::Relaxed) {

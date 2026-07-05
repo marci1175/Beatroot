@@ -19,7 +19,7 @@ fon = "0.6.0"
 indexmap = {version = "2.14.0", features = ["serde"]}
 tokio = { version = "1.52.3", features = ["full"] }
 chrono =  {version = "0.4.45", features = ["serde"]}
-dashmap = {version = "6.2.1", features = ["serde"]}
+dashmap = { version = "6.2.1", features = ["serde"] }
 strum = { version = "0.28.0", features = ["derive"] }
 windows = "0.62.2"
 lofty = "0.24.0"

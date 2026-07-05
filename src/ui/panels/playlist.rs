@@ -1,6 +1,7 @@
 use std::{collections::HashMap, ops::Add, path::PathBuf, sync::Arc};
 
 use crate::{
+    audio::lib::AudioThreadHandler,
     internals::{
         sample::{SampleProperties, generate_sample_waveform},
         utils::find_value_inbetween,
@@ -136,7 +137,11 @@ const BPM_PRESETS: &[f32] = &[
     60.0, 70.0, 80.0, 90.0, 100.00, 110.0, 120.0, 128.0, 140.0, 165.0, 174.0,
 ];
 
-pub fn playlist_ui(_this: &Panel, ui: &mut Ui, global_state: Arc<PanelStates>) {
+pub fn playlist_ui(
+    _this: &Panel,
+    ui: &mut Ui,
+    (global_state, audio_handler): (Arc<PanelStates>, Option<Arc<AudioThreadHandler>>),
+) {
     let state = &global_state.playlist_panel;
 
     // Get the default track color
@@ -720,7 +725,13 @@ fn get_track_customization(
 }
 
 /// Draws main cursor (Indicates where we are in current playlist)
-fn draw_cursor(ui: &mut Ui, playlist_rect: Rect, grid_offset: Vec2, cursor_offset: f32, preferences: &PlaylistPreferences) {
+fn draw_cursor(
+    ui: &mut Ui,
+    playlist_rect: Rect,
+    grid_offset: Vec2,
+    cursor_offset: f32,
+    preferences: &PlaylistPreferences,
+) {
     ui.painter().line(
         vec![
             Pos2::new(
