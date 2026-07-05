@@ -1,6 +1,6 @@
 use std::{
     ffi::OsStr,
-    hash::{DefaultHasher, Hash},
+    hash::Hash,
     path::PathBuf,
     sync::Arc,
     time::Duration,
@@ -22,7 +22,7 @@ use crate::{
     },
     ui::panels::{
         lib::{Panel, PanelStates, display_error_as_toast, random_color_with_opacity},
-        playlist::{PlaybackState, SampleInstance},
+        playlist::SampleInstance,
     },
 };
 
@@ -159,7 +159,7 @@ pub fn mediapicker_ui(
                     let workspace_samples = &state_ref.workspace_selector.workspace_samples;
 
                     for (path, bookmark) in bookmarks {
-                        let entry = draggable_sample(
+                        let _entry = draggable_sample(
                             ui,
                             selected_object,
                             dragged_sample_props,
@@ -230,7 +230,7 @@ pub fn mediapicker_ui(
                     let workspace_samples = &state_ref.workspace_selector.workspace_samples;
 
                     for (path, sample) in samples {
-                        let entry = draggable_sample(
+                        let _entry = draggable_sample(
                             ui,
                             selected_object,
                             dragged_sample_props,
@@ -851,7 +851,7 @@ fn playbackable_sample_preview(
 
                                     // If either one of the sliders have been changed send the message to the thread to update the player
                                     if speed.inner.changed() || volume.inner.changed() {
-                                        let preferences = preferences.clone();
+                                        let preferences = *preferences;
                                         drop(query);
 
                                         display_error_as_toast(

@@ -4,7 +4,7 @@ use crate::{app::Application, ui::windows::PluginsState};
 
 pub fn display_plugins_window(
     ui: &mut Ui,
-    global_state: &Application,
+    _global_state: &Application,
     _window_state: &mut PluginsState,
 ) -> Option<InnerResponse<Option<()>>> {
     let screen_size = ui.ctx().viewport_rect().size();
@@ -25,6 +25,6 @@ pub fn display_plugins_window(
 
             // Display available items in the plugins folder
             // Plugins are loaded lazily - theyre loaded at startup or when the user requests a refresh of the list.
-            for plugin in 0..3 {}
+            for _plugin in 0..3 {}
         })
 }

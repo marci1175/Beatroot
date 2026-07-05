@@ -53,7 +53,7 @@ impl TrackCustomization {
         Self {
             label_text: format!("Track {nth}"),
             label_text_color: text_color,
-            label_color: label_color,
+            label_color,
             height: TRACK_HEIGHT,
 
             height_set: false,
@@ -140,12 +140,12 @@ const BPM_PRESETS: &[f32] = &[
 pub fn playlist_ui(
     _this: &Panel,
     ui: &mut Ui,
-    (global_state, audio_handler): (Arc<PanelStates>, Option<Arc<AudioThreadHandler>>),
+    (global_state, _audio_handler): (Arc<PanelStates>, Option<Arc<AudioThreadHandler>>),
 ) {
     let state = &global_state.playlist_panel;
 
     // Get the default track color
-    let preferences = state.read().playlist_preferences.clone();
+    let preferences = state.read().playlist_preferences;
 
     // Draw the main options / tools for this ui
     ui.horizontal(|ui| {

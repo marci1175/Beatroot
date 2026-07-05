@@ -1,4 +1,4 @@
-use std::{mem::MaybeUninit, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
 use eframe::{App, CreationContext};
 use egui::{Color32, RichText, Sense, vec2};

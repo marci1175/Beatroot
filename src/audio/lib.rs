@@ -5,7 +5,6 @@ use std::{
         Arc,
         mpsc::{Receiver, Sender},
     },
-    time::Duration,
 };
 
 use dashmap::DashMap;
@@ -13,10 +12,7 @@ use parking_lot::Mutex;
 use rodio::{MixerDeviceSink, Player, Source};
 use strum::EnumTryAs;
 
-use crate::{
-    audio::playback::{PlayerPreferences, SamplePlayer},
-    internals::sample::SampleProperties,
-};
+use crate::audio::playback::{PlayerPreferences, SamplePlayer};
 
 pub struct AudioPlayback {
     pub sink: MixerDeviceSink,

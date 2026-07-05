@@ -1,5 +1,5 @@
 use egui::{
-    Align2, Color32, InnerResponse, Panel, RichText, ScrollArea, Sense, Ui, UiBuilder, vec2,
+    Align2, Color32, InnerResponse, Panel, RichText, ScrollArea, Sense, Ui,
 };
 use strum::{Display, VariantArray};
 
