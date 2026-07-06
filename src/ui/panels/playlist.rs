@@ -112,7 +112,7 @@ pub struct PlaylistState {
     /// Track customization
     pub custom_tracks: HashMap<usize, TrackCustomization>,
 
-    pub samples: IndexMap<Position, SampleInstance>,
+    pub samples: IndexMap<Position, Vec<SampleInstance>>,
 
     pub playback_state: PlaybackState,
 
@@ -377,148 +377,169 @@ fn render_samples(
     // Iterate over the samples and decide which one is in frame.
     let samples = state.read().samples.clone();
 
-    for (pos, sample) in samples {
-        // Check if the track is visible based on the track
-        if !(pos.track >= before_first_visible_track_idx && pos.track <= last_visible_track_idx) {
-            continue;
-        }
+    for (pos, samples) in samples {
+        for (sample_idx, sample) in samples.iter().enumerate() {
+            // Check if the track is visible based on the track
+            if !(pos.track >= before_first_visible_track_idx && pos.track <= last_visible_track_idx)
+            {
+                continue;
+            }
 
-        let line_idx = pos.beat as i64 - first_visible_beat as i64;
+            let line_idx = pos.beat as i64 - first_visible_beat as i64;
 
-        let start_pos = if line_idx >= 0 && (line_idx as usize) < beat_lines.len() {
-            beat_lines[line_idx as usize][0].x
-        } else if !beat_lines.is_empty() {
-            beat_lines[0][0].x + (line_idx as f32) * BEAT_WIDTH as f32
-        } else {
-            continue;
-        };
+            let start_pos = if line_idx >= 0 && (line_idx as usize) < beat_lines.len() {
+                beat_lines[line_idx as usize][0].x
+            } else if !beat_lines.is_empty() {
+                beat_lines[0][0].x + (line_idx as f32) * BEAT_WIDTH as f32
+            } else {
+                continue;
+            };
 
-        // Get track customization
-        let _track_customization = get_track_customization(state, pos.track, preferences);
+            // Get track customization
+            let _track_customization = get_track_customization(state, pos.track, preferences);
 
-        // Calculate rectangle length
-        let bps = state.read().bpm / 60.;
+            // Calculate rectangle length
+            let bps = state.read().bpm / 60.;
 
-        let rectangle_length =
-            symphonia::core::units::Time::from_millis(sample.properties.length as i64).as_secs()
-                as f32
+            let rectangle_length = symphonia::core::units::Time::from_millis(
+                sample.properties.length as i64,
+            )
+            .as_secs() as f32
                 * bps
                 * BEAT_WIDTH as f32;
 
-        // If the sample isn't long enough to reach onto the screen, skip it.
-        if start_pos + rectangle_length < playlist_rect.left() {
-            continue;
-        }
+            // If the sample isn't long enough to reach onto the screen, skip it.
+            if start_pos + rectangle_length < playlist_rect.left() {
+                continue;
+            }
 
-        // Create the rect where the sample might be rendered.
-        let sample_rect = Rect::from_min_max(
-            Pos2 {
-                x: start_pos,
-                y: (track_lines[pos.track - before_first_visible_track_idx][0].y),
-            },
-            Pos2 {
-                x: (start_pos + rectangle_length),
-                y: (track_lines[pos.track - before_first_visible_track_idx + 1][0].y),
-            },
-        );
-
-        // Draw sample rect
-        ui.painter()
-            .with_clip_rect(playlist_rect)
-            .rect_filled(sample_rect, 0., sample.color);
-
-        // Create galley for sample label
-        let galley = ui.fonts_mut(|f| {
-            f.layout(
-                sample.name.clone(),
-                egui::FontId::proportional(12.0),
-                egui::Color32::WHITE,
-                sample_rect.width(),
-            )
-        });
-
-        // Draw sample text
-        ui.painter()
-            .with_clip_rect(playlist_rect)
-            .with_clip_rect(sample_rect)
-            .galley(sample_rect.left_top(), galley.clone(), egui::Color32::WHITE);
-
-        // Allocate a response over the sample to capture any inputs it receives
-        let sample_response = ui.allocate_rect(sample_rect, Sense::all());
-
-        // Draw the waveform of the sample
-        let waveform_rect = sample_rect.shrink2(vec2(0., galley.rect.height()));
-
-        // Only display the waveform if we actually have smth to display
-        if let Some(waveform) = &sample.waveform_map {
-            // Decide each columns width
-            let column_width = waveform_rect.width() / waveform.len() as f32;
-
-            let baseline_maximum_offset = waveform_rect.height() / 2.0;
-            let middle_y = waveform_rect.top() + baseline_maximum_offset;
-
-            // Fetch positions over sample
-            let start = Pos2::new(waveform_rect.left(), middle_y);
-            let end = Pos2::new(waveform_rect.right(), middle_y);
-
-            // Draw a centerline serving as the indication for silence.
-            ui.painter().with_clip_rect(playlist_rect).line(
-                [start, end].to_vec(),
-                Stroke::new(1.0_f32, preferences.waveform_color),
+            // Create the rect where the sample might be rendered.
+            let sample_rect = Rect::from_min_max(
+                Pos2 {
+                    x: start_pos,
+                    y: (track_lines[pos.track - before_first_visible_track_idx][0].y),
+                },
+                Pos2 {
+                    x: (start_pos + rectangle_length),
+                    y: (track_lines[pos.track - before_first_visible_track_idx + 1][0].y),
+                },
             );
 
-            // Iter over all the samples and draw them
-            // We are going to ratio this based on the highest/lowest value the output can get which is 1.0 and -1.0
-            // There for the top of this rect is going to serve as 1.0 and the bottom is -1.0
-            let mut idx = 0;
-            let scale_reference = waveform
-                .iter()
-                .flat_map(|[min, max]| [min.abs(), max.abs()])
-                .fold(0.0_f32, f32::max)
-                .max(f32::EPSILON);
+            // Draw sample rect
+            ui.painter()
+                .with_clip_rect(playlist_rect)
+                .rect_filled(sample_rect, 0., sample.color);
 
-            // Draw all of the columns on the screen
-            while idx < waveform.len() {
-                // The maximum values goes on top of the baseline and the minimum below it
-                let [min, max] = waveform[idx];
+            // Create galley for sample label
+            let galley = ui.fonts_mut(|f| {
+                f.layout(
+                    sample.name.clone(),
+                    egui::FontId::proportional(12.0),
+                    egui::Color32::WHITE,
+                    sample_rect.width(),
+                )
+            });
 
-                // The x coordinate we are operation on
-                let x_offset = column_width * idx as f32;
+            // Draw sample text
+            ui.painter()
+                .with_clip_rect(playlist_rect)
+                .with_clip_rect(sample_rect)
+                .galley(sample_rect.left_top(), galley.clone(), egui::Color32::WHITE);
 
-                let x = waveform_rect.left() + x_offset;
+            // Allocate a response over the sample to capture any inputs it receives
+            let sample_response = ui.allocate_rect(sample_rect, Sense::all());
 
-                // Starting location of the column
-                let baseline = Pos2::new(x, middle_y);
+            // Draw the waveform of the sample
+            let waveform_rect = sample_rect.shrink2(vec2(0., galley.rect.height()));
 
-                let normalized_max = max / scale_reference;
-                let normalized_min = min / scale_reference;
+            // Only display the waveform if we actually have smth to display
+            if let Some(waveform) = &sample.waveform_map {
+                // Decide each columns width
+                let column_width = waveform_rect.width() / waveform.len() as f32;
 
-                // Height of the column we are drawing
-                let height_max = -normalized_max * baseline_maximum_offset;
-                let height_min = -normalized_min * baseline_maximum_offset;
+                let baseline_maximum_offset = waveform_rect.height() / 2.0;
+                let middle_y = waveform_rect.top() + baseline_maximum_offset;
 
-                // Draw max
+                // Fetch positions over sample
+                let start = Pos2::new(waveform_rect.left(), middle_y);
+                let end = Pos2::new(waveform_rect.right(), middle_y);
+
+                // Draw a centerline serving as the indication for silence.
                 ui.painter().with_clip_rect(playlist_rect).line(
-                    [baseline, Pos2::new(x, middle_y + height_max)].to_vec(),
-                    Stroke::new(column_width, preferences.waveform_color),
-                );
-                // Draw min
-                ui.painter().with_clip_rect(playlist_rect).line(
-                    [baseline, Pos2::new(x, middle_y + height_min)].to_vec(),
-                    Stroke::new(column_width, preferences.waveform_color),
+                    [start, end].to_vec(),
+                    Stroke::new(1.0_f32, preferences.waveform_color),
                 );
 
-                // Increment index
-                idx += 1;
+                // Iter over all the samples and draw them
+                // We are going to ratio this based on the highest/lowest value the output can get which is 1.0 and -1.0
+                // There for the top of this rect is going to serve as 1.0 and the bottom is -1.0
+                let mut idx = 0;
+                let scale_reference = waveform
+                    .iter()
+                    .flat_map(|[min, max]| [min.abs(), max.abs()])
+                    .fold(0.0_f32, f32::max)
+                    .max(f32::EPSILON);
+
+                // Draw all of the columns on the screen
+                while idx < waveform.len() {
+                    // The maximum values goes on top of the baseline and the minimum below it
+                    let [min, max] = waveform[idx];
+
+                    // The x coordinate we are operation on
+                    let x_offset = column_width * idx as f32;
+
+                    let x = waveform_rect.left() + x_offset;
+
+                    // Starting location of the column
+                    let baseline = Pos2::new(x, middle_y);
+
+                    let normalized_max = max / scale_reference;
+                    let normalized_min = min / scale_reference;
+
+                    // Height of the column we are drawing
+                    let height_max = -normalized_max * baseline_maximum_offset;
+                    let height_min = -normalized_min * baseline_maximum_offset;
+
+                    // Draw max
+                    ui.painter().with_clip_rect(playlist_rect).line(
+                        [baseline, Pos2::new(x, middle_y + height_max)].to_vec(),
+                        Stroke::new(column_width, preferences.waveform_color),
+                    );
+                    // Draw min
+                    ui.painter().with_clip_rect(playlist_rect).line(
+                        [baseline, Pos2::new(x, middle_y + height_min)].to_vec(),
+                        Stroke::new(column_width, preferences.waveform_color),
+                    );
+
+                    // Increment index
+                    idx += 1;
+                }
             }
-        }
 
-        // If the sample is dragged, simulate a dnd again
-        sample_response.dnd_set_drag_payload(sample.clone());
+            // If the sample is dragged, simulate a dnd again
+            sample_response.dnd_set_drag_payload(sample.clone());
 
-        // Remove the old position of the sample
-        if sample_response.drag_stopped() {
-            state.write().samples.swap_remove(&pos);
+            // Remove the old position of the sample, if the list is empty
+            if sample_response.drag_stopped() {
+                // Get handle to samples
+                let samples_handle = &mut state.write().samples;
+
+                // This will get set to true if the position does not contain any samples.
+                // Check if the position contains any samples
+                let should_be_deleted = if let Some(samples_at_pos) = samples_handle.get_mut(&pos) {
+                    // Remove the sample from that position
+                    samples_at_pos.remove(sample_idx);
+
+                    samples_at_pos.is_empty()
+                } else {
+                    false
+                };
+
+                // Remove position if empty
+                if should_be_deleted {
+                    samples_handle.swap_remove(&pos);
+                }
+            }
         }
     }
 }
@@ -631,14 +652,25 @@ fn drop_sample(
                 }
             };
 
-            // Store sample in playlist
-            state.write().samples.insert(
-                Position {
-                    track: absolute_track_idx,
-                    beat: absolute_beat_pos,
-                },
-                sample_instance.clone(),
-            );
+            // Create the position instance of the sample
+            let sample_position = Position {
+                track: absolute_track_idx,
+                beat: absolute_beat_pos,
+            };
+
+            let samples_handle = &mut state.write().samples;
+
+            // If there are already samples at that location we can append this sample to that specific location
+            if let Some(samples) = samples_handle.get_mut(&sample_position) {
+                // Store sample
+                samples.push(sample_instance);
+            }
+            // If there are no samples in that location create a list containing that sample.
+            // Make sure to clean up the list if it is empty.
+            else {
+                // Store sample in playlist
+                samples_handle.insert(sample_position, vec![sample_instance.clone()]);
+            }
         }
     }
 }
@@ -684,7 +716,7 @@ fn hover_sample(
             let rectangle_length =
                 symphonia::core::units::Time::from_millis(payload.properties.length as i64)
                     .as_secs() as f32
-                    / bps
+                    * bps
                     * BEAT_WIDTH as f32;
 
             if relative_track_pos >= track_lines.len() {

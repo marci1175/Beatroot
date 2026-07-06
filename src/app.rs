@@ -42,7 +42,8 @@ pub struct Application {
 
     #[serde(skip)]
     /// The audio handler is a set of channels and atomic data which ensures audio runs on a different thread than main and that both are syncronized.
-    pub audio_handler: Option<Arc<AudioThreadHandler>>,
+    /// This thread is used for playing back individual samples. This is only for simple audio playback.
+    pub sample_audio_handler: Option<Arc<AudioThreadHandler>>,
 }
 
 impl Default for Application {
@@ -61,13 +62,13 @@ impl Default for Application {
             save_path: None,
 
             // If there was no audio handler added then just handle it with None.
-            audio_handler: None,
+            sample_audio_handler: None,
         }
     }
 }
 
 impl AppRoot {
-    pub fn new(cc: &CreationContext, audio_thread_handler: AudioThreadHandler) -> Self {
+    pub fn new(cc: &CreationContext, playback_thread_handler: AudioThreadHandler) -> Self {
         // Create a default app root state
         let mut app_root = AppRoot::default();
 
@@ -78,7 +79,7 @@ impl AppRoot {
 
         // Set the application's audio thread handler.
         // This will get initalized every time so we can actually use a maybe uninit since its initalized every application startup.
-        app_root.application.audio_handler = Some(Arc::new(audio_thread_handler));
+        app_root.application.sample_audio_handler = Some(Arc::new(playback_thread_handler));
 
         // Return state
         app_root
@@ -94,7 +95,7 @@ impl App for AppRoot {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Check if the audio handler has been initalized, if not, display the error in the ui, but let the user proceed.
-        if self.application.audio_handler.is_none() {
+        if self.application.sample_audio_handler.is_none() {
             if ui.label(
                     RichText::new("⚠ No available audio output ⚠")
                         .small()
@@ -192,7 +193,7 @@ impl App for AppRoot {
             panel.display(
                 ui,
                 self.application.panel_states.clone(),
-                self.application.audio_handler.clone(),
+                self.application.sample_audio_handler.clone(),
             );
 
             // If the panel is not detached we can display its toasts in the root ui

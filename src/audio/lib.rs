@@ -14,11 +14,11 @@ use strum::EnumTryAs;
 
 use crate::audio::playback::{PlayerPreferences, SamplePlayer};
 
-pub struct AudioPlayback {
+pub struct HostAudioPlayback {
     pub sink: MixerDeviceSink,
 }
 
-impl AudioPlayback {
+impl HostAudioPlayback {
     pub fn new() -> anyhow::Result<Self> {
         let sink = rodio::DeviceSinkBuilder::from_default_device()?
             .with_buffer_size(rodio::cpal::BufferSize::Fixed(1024))
@@ -80,10 +80,9 @@ impl AudioThreadHandler {
 
 /// It is very important that this thread should never try to block or panic since that would stop audio playback completely.
 /// We should implement a method to restart this thread if it crashes.
-pub fn create_playback_thread() -> anyhow::Result<AudioThreadHandler> {
-    // Create an audio playback unit
-    let audio_playback = AudioPlayback::new()?;
-
+pub fn create_playback_thread(
+    audio_playback: Arc<HostAudioPlayback>,
+) -> anyhow::Result<AudioThreadHandler> {
     // Create channel pair for communication with this audio thread
     // This is where we send the information in
     let (application_input_handle, input_receiver) =
