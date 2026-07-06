@@ -399,11 +399,10 @@ fn render_samples(
         // Calculate rectangle length
         let bps = state.read().bpm / 60.;
 
-        // This is basically secs / bps * beat_width
         let rectangle_length =
             symphonia::core::units::Time::from_millis(sample.properties.length as i64).as_secs()
                 as f32
-                / bps
+                * bps
                 * BEAT_WIDTH as f32;
 
         // If the sample isn't long enough to reach onto the screen, skip it.

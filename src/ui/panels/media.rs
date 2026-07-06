@@ -1,10 +1,4 @@
-use std::{
-    ffi::OsStr,
-    hash::Hash,
-    path::PathBuf,
-    sync::Arc,
-    time::Duration,
-};
+use std::{ffi::OsStr, hash::Hash, path::PathBuf, sync::Arc, time::Duration};
 
 use chrono::Utc;
 use egui::{Color32, Id, Response, RichText, ScrollArea, Sense, Ui, UiBuilder, vec2};

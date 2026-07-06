@@ -1,6 +1,4 @@
-use egui::{
-    Align2, Color32, InnerResponse, Panel, RichText, ScrollArea, Sense, Ui,
-};
+use egui::{Align2, Color32, InnerResponse, Panel, RichText, ScrollArea, Sense, Ui};
 use strum::{Display, VariantArray};
 
 use crate::{app::Application, ui::windows::SettingsState};
