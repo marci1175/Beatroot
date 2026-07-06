@@ -29,50 +29,52 @@ impl AudioPlayback {
     }
 }
 
+/// Message types for communicating to the thread.
 #[derive(Debug, Clone)]
 pub enum AudioThreadMessage {
+    /// Tells the thread to create a player with a specific id.
     CreatePlayer(u64),
-    LoadPlayer {
-        id: u64,
-        fs_src: PathBuf,
-    },
+    /// Tells the thread to load a source to the player with the specific id.
+    LoadPlayer { id: u64, fs_src: PathBuf },
+    /// Tell the thread to update the settings of a specific player.
     UpdatePlayerPreferences {
         id: u64,
         preferences: PlayerPreferences,
     },
 }
 
+/// Messages the audio thread can reply with.
 #[derive(EnumTryAs, Clone, Debug)]
 pub enum AudioThreadReply {
+    /// Notifies the sender if a player has been created.
     CreatedPlayer(u64),
+    /// Notifies the sender if a player has been updated.
     UpdatedPlayer(Result<(), String>),
 }
 
+/// The audio thread handler struct is always bound to one thread - the one it is created with.
+/// It contains fields useful for communicating with the thread.
+/// Please note that this thread handler is only suitable for communication between two threads.
 pub struct AudioThreadHandler {
+    /// A channel to send messages to the thread.
     thread_input: Sender<AudioThreadMessage>,
+    /// A channel to receive replies from the thread.
     thread_output: Mutex<Receiver<AudioThreadReply>>,
 
+    /// A list of players bound to a specific id.
+    /// Normally this is not cleaned up, since every player contains its own settings (ie volume) - and they dont hold much space anyway.
     pub sample_players: Arc<DashMap<u64, SamplePlayer>>,
 }
 
 impl AudioThreadHandler {
     /// Sends a message to the thread and waits for its reply.
-    /// If a reply never comes this block indefinitely.
+    /// If a reply never comes this blocks indefinitely.
     pub fn create_exchange(&self, message: AudioThreadMessage) -> anyhow::Result<AudioThreadReply> {
         // Send message to thread
         self.thread_input.send(message)?;
 
         // Wait for reply from thread
         Ok(self.thread_output.lock().recv()?)
-    }
-
-    /// Sends a message but does not wait for the thread's reply.
-    /// This is most useful for sending commands which dont have a reply.
-    pub fn send_command(&self, message: AudioThreadMessage) -> anyhow::Result<()> {
-        // Send reply to thread
-        self.thread_input.send(message)?;
-
-        Ok(())
     }
 }
 
@@ -93,6 +95,7 @@ pub fn create_playback_thread() -> anyhow::Result<AudioThreadHandler> {
     // Create thread handler so that the main thread (or any other) can communicate with this thread directly.
     let currently_available_players = Arc::new(DashMap::new());
 
+    // Create thread handler instance
     let thread_handler = AudioThreadHandler {
         thread_output: Mutex::new(application_output_handle),
         thread_input: application_input_handle,
@@ -147,6 +150,9 @@ pub fn create_playback_thread() -> anyhow::Result<AudioThreadHandler> {
                                     // Try to decode the source itself
                                     match source {
                                         Ok(src) => {
+                                            // Clear out the player before inserting the new source.
+                                            sample_player.player.stop();
+
                                             // Set the total duration field of the sample
                                             sample_player.total_duration = src.total_duration();
 

@@ -685,7 +685,11 @@ fn playbackable_sample_preview(
                     // Get the attributes of the current player if there are any
                     let is_paused = entry
                         .as_ref()
-                        .map(|player| player.player.is_paused())
+                        .map(|player| player.player.is_paused() || player.player.empty() )
+                        .unwrap_or(true);
+                    let is_empty = entry
+                        .as_ref()
+                        .map(|player| player.player.empty() )
                         .unwrap_or(true);
                     let mut current_position = entry
                         .as_ref()
@@ -721,6 +725,22 @@ fn playbackable_sample_preview(
                                 .clone()
                                 .expect("Audio handler thread not initalized.");
 
+                            // If the player was empty re-insert the sample and then run the seeking.
+                            if is_empty {
+                                // Display the error if there were any
+                                // Tell the audio thread to load the player
+                                display_error_as_toast(
+                                    audio_handler.create_exchange(
+                                        crate::audio::lib::AudioThreadMessage::LoadPlayer {
+                                            id,
+                                            fs_src: path.clone(),
+                                        },
+                                    ),
+                                    ToastStyle::default(),
+                                    toasts.clone(),
+                                );
+                            }
+
                             // Get this player and try to seek the sample thorugh the player
                             if let Some(mut query) = audio_handler.sample_players.get_mut(&id) {
                                 let sample_player = query.value_mut();
@@ -746,7 +766,7 @@ fn playbackable_sample_preview(
 
                     // Main controls for playback
                     ui.horizontal(|ui| {
-                        ui.add_enabled_ui(is_paused, |ui| {
+                        ui.add_enabled_ui(is_paused || is_empty, |ui| {
                             // Draw play button
                             if ui.button("Play").clicked() {
                                 let audio_handler = audio_handler
@@ -754,10 +774,10 @@ fn playbackable_sample_preview(
                                     .expect("Audio handler thread not initalized.");
 
                                 // Try checking if there is already a player created since if a sample is paused we would like to continue from there
-                                if let Some(query) = audio_handler.sample_players.get(&id) {
+                                if let Some(query) = audio_handler.sample_players.get(&id) && !is_empty {
                                     let sample_player = query.value();
-
-                                    // Start the player
+                                    
+                                    // Restart the player
                                     sample_player.player.play();
                                 } else {
                                     // Request the audio handler thread to create a player for this specific id
@@ -799,7 +819,7 @@ fn playbackable_sample_preview(
                                     let sample_player = query.value();
 
                                     // If the sample has already been play through dont let it be paused instead just reset the player if its stopped after its finished
-                                    if sample_player.player.empty() {
+                                    if dbg!(sample_player.player.empty()) {
                                         sample_player.player.stop();
                                     } else {
                                         sample_player.player.pause();
