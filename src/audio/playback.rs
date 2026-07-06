@@ -1,13 +1,15 @@
 use std::{
+    collections::HashMap,
     num::{NonZero, NonZeroU32},
     sync::Arc,
     time::Duration,
 };
 
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use rodio::{Player, SampleRate, Source};
+use rodio::{Player, SampleRate, Source, mixer::Mixer};
+use rubato::{Async, SincInterpolationParameters, SincInterpolationType, WindowFunction};
 
-use crate::ui::panels::playlist::PlaybackState;
+use crate::{audio::pipeline::process_samples, ui::panels::playlist::PlaybackState};
 
 #[derive(Debug, Clone, Copy)]
 /// This is for personalizing the sample previewers.
@@ -24,6 +26,11 @@ impl Default for PlayerPreferences {
             volume: 1.0,
         }
     }
+}
+
+pub struct HostInformation {
+    pub sample_rate: u32,
+    pub channel_count: u16,
 }
 
 /// Used for playing back samples easily. This is the simpler form of playing back samples.
@@ -106,20 +113,72 @@ impl Source for SampleBuffer {
     }
 }
 
-/// This represents the main playbacker in the application.
+/// This represents the main playback manager in the application.
+/// It used for playing back the playlist's samples.
 /// This handles the main workflow of the raw samples.
-pub struct MasterPlayback {
+pub struct MasterPlaybackThread {
     playback_state: PlaybackState,
-    worker_thread_pool: ThreadPool,
+    sample_ingest: flume::Sender<Vec<SampleBuffer>>,
+    host_mixer: Mixer,
 }
 
-impl MasterPlayback {
-    pub fn new() -> anyhow::Result<Self> {
+impl MasterPlaybackThread {
+    pub fn new(host_info: Arc<HostInformation>, host_mixer: Mixer) -> anyhow::Result<Self> {
         // Create a thread pool with the default settings
         // CPU core count equals thread count.
-        let worker_thread_pool = ThreadPoolBuilder::new()
-            .build()?;
-        
-        Ok(Self { worker_thread_pool, playback_state: PlaybackState::Stopped })
+        let worker_thread_pool = ThreadPoolBuilder::new().build()?;
+
+        // Create sample ingest channel, this serves as a way for the main thread to send information to the master playback thread.
+        let (sender, receiver) = flume::unbounded::<Vec<SampleBuffer>>();
+        let host_mixer_clone = host_mixer.clone();
+
+        // Create a thread for handling incoming samples
+        std::thread::spawn(move || {
+            let host_mixer = host_mixer_clone.clone();
+            let host_info = host_info.clone();
+
+            // Create parameters for the resampler
+            let params = SincInterpolationParameters {
+                sinc_len: 256,
+                f_cutoff: 0.95,
+                interpolation: SincInterpolationType::Cubic,
+                oversampling_factor: 256,
+                window: WindowFunction::BlackmanHarris2,
+            };
+
+            // Create a buffer here so that it gets reused instead of reallocated every iteration.
+            let mut processed_sample_buffer = Vec::with_capacity(10);
+            
+            // Resample input - all inputs could vary in length, however the output length doesnt really matter (input is going to be fixed cuz its easier to implement).
+            let mut resamplers: HashMap<u32, Async<f32>> = HashMap::new();
+
+            loop {
+                // Listen for an incoming sample packet
+                match receiver.recv() {
+                    Ok(samples) => {
+                        // Handle samples by passing them into the pipeline
+                        process_samples(
+                            &worker_thread_pool,
+                            &samples,
+                            host_info.clone(),
+                            &params,
+                            &mut processed_sample_buffer,
+                            &mut resamplers,
+                        )
+                        .expect("Error occured in master playback thread.");
+                    }
+                    Err(error) => {
+                        // Print the error but we shouldnt stop execution
+                        eprintln!("{error}");
+                    }
+                }
+            }
+        });
+
+        Ok(Self {
+            playback_state: PlaybackState::Stopped,
+            sample_ingest: sender,
+            host_mixer,
+        })
     }
 }
