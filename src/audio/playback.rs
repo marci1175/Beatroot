@@ -1,15 +1,22 @@
 use std::{
-    collections::HashMap,
     num::{NonZero, NonZeroU32},
     sync::Arc,
     time::Duration,
 };
 
-use rayon::{ThreadPool, ThreadPoolBuilder};
+use dashmap::DashMap;
+use parking_lot::Mutex;
+use rayon::ThreadPoolBuilder;
 use rodio::{Player, SampleRate, Source, mixer::Mixer};
-use rubato::{Async, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::{
+    Async, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    audioadapter::Adapter,
+};
 
-use crate::{audio::pipeline::process_samples, ui::panels::playlist::PlaybackState};
+use crate::{
+    audio::pipeline::process_samples, plugins::fx_chain::NodeMap,
+    ui::panels::playlist::PlaybackState,
+};
 
 #[derive(Debug, Clone, Copy)]
 /// This is for personalizing the sample previewers.
@@ -28,6 +35,7 @@ impl Default for PlayerPreferences {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct HostInformation {
     pub sample_rate: u32,
     pub channel_count: u16,
@@ -68,7 +76,9 @@ pub struct SamplePlayer {
 ///         V
 /// 5. Queue to device output.
 /// ```
-#[derive(Debug)]
+///
+/// All samples are interleaved by default.
+#[derive(Debug, Clone)]
 pub struct SampleBuffer {
     /// The raw samples of the buffer.
     samples: Vec<f32>,
@@ -77,8 +87,60 @@ pub struct SampleBuffer {
     /// The count of channels present in the sample.
     channels: u16,
 
+    /// The id of the node that this sample is coming from.
+    /// This is going to be useful when looking up what effects to apply to this sample.
+    origin_id: usize,
+
     /// This is for the internal iterator trait implementation.
     _iterator_idx: usize,
+}
+
+unsafe impl Adapter<'_, f32> for SampleBuffer {
+    unsafe fn read_sample_unchecked(&self, channel: usize, frame: usize) -> f32 {
+        let idx = frame * self.channels as usize + channel;
+
+        *unsafe { self.samples.get_unchecked(idx) }
+    }
+
+    fn channels(&self) -> usize {
+        self.channels as usize
+    }
+
+    fn frames(&self) -> usize {
+        self.samples.len() / self.channels as usize
+    }
+}
+
+impl SampleBuffer {
+    pub fn new(samples: Vec<f32>, origin_id: usize, sample_rate: u32, channels: u16) -> Self {
+        Self {
+            samples,
+            sample_rate,
+            origin_id,
+            channels,
+            _iterator_idx: 0,
+        }
+    }
+
+    pub fn samples(&self) -> &[f32] {
+        &self.samples
+    }
+
+    pub fn sample_count(&self) -> usize {
+        self.samples.len()
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    pub fn channels(&self) -> u16 {
+        self.channels
+    }
+
+    pub fn origin_id(&self) -> usize {
+        self.origin_id
+    }
 }
 
 impl Iterator for SampleBuffer {
@@ -113,6 +175,9 @@ impl Source for SampleBuffer {
     }
 }
 
+/// Wrapper around the type NodeMap
+pub type FXMap = Arc<DashMap<usize, NodeMap>>;
+
 /// This represents the main playback manager in the application.
 /// It used for playing back the playlist's samples.
 /// This handles the main workflow of the raw samples.
@@ -120,10 +185,17 @@ pub struct MasterPlaybackThread {
     playback_state: PlaybackState,
     sample_ingest: flume::Sender<Vec<SampleBuffer>>,
     host_mixer: Mixer,
+
+    /// Contains each sample's effects that should be applied to them.
+    /// They key is the original identifier for that specific node in the playlist.
+    /// When reading the samples from the playlist each sample read from a different node will have a different id.
+    /// This id is generated in the ui and later supplied to this map, if the user wants to apply any effects to that specific node.
+    /// The audio thread will look up the sample's origin id - fetch the effects and their order and run the effects on the samples.
+    fx_map: FXMap,
 }
 
 impl MasterPlaybackThread {
-    pub fn new(host_info: Arc<HostInformation>, host_mixer: Mixer) -> anyhow::Result<Self> {
+    pub fn new(host_info: HostInformation, host_mixer: Mixer) -> anyhow::Result<Self> {
         // Create a thread pool with the default settings
         // CPU core count equals thread count.
         let worker_thread_pool = ThreadPoolBuilder::new().build()?;
@@ -132,10 +204,15 @@ impl MasterPlaybackThread {
         let (sender, receiver) = flume::unbounded::<Vec<SampleBuffer>>();
         let host_mixer_clone = host_mixer.clone();
 
+        // Create a map of effects which the samples will be applied with.
+        let fx_map: Arc<DashMap<usize, NodeMap>> = Arc::new(DashMap::new());
+        let fx_map_clone = fx_map.clone();
+
         // Create a thread for handling incoming samples
         std::thread::spawn(move || {
-            let host_mixer = host_mixer_clone.clone();
-            let host_info = host_info.clone();
+            let _host_mixer = host_mixer_clone.clone();
+            let host_info = host_info;
+            let _effects_map = fx_map_clone.clone();
 
             // Create parameters for the resampler
             let params = SincInterpolationParameters {
@@ -148,9 +225,9 @@ impl MasterPlaybackThread {
 
             // Create a buffer here so that it gets reused instead of reallocated every iteration.
             let mut processed_sample_buffer = Vec::with_capacity(10);
-            
+
             // Resample input - all inputs could vary in length, however the output length doesnt really matter (input is going to be fixed cuz its easier to implement).
-            let mut resamplers: HashMap<u32, Async<f32>> = HashMap::new();
+            let resamplers: Arc<DashMap<u32, Mutex<Async<f32>>>> = Arc::new(DashMap::new());
 
             loop {
                 // Listen for an incoming sample packet
@@ -159,11 +236,11 @@ impl MasterPlaybackThread {
                         // Handle samples by passing them into the pipeline
                         process_samples(
                             &worker_thread_pool,
-                            &samples,
-                            host_info.clone(),
+                            samples,
+                            host_info,
                             &params,
                             &mut processed_sample_buffer,
-                            &mut resamplers,
+                            resamplers.clone(),
                         )
                         .expect("Error occured in master playback thread.");
                     }
@@ -179,6 +256,11 @@ impl MasterPlaybackThread {
             playback_state: PlaybackState::Stopped,
             sample_ingest: sender,
             host_mixer,
+            fx_map,
         })
+    }
+
+    pub fn fx_map(&self) -> Arc<DashMap<usize, NodeMap>> {
+        self.fx_map.clone()
     }
 }

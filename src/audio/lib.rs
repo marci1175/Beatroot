@@ -67,6 +67,17 @@ pub struct AudioThreadHandler {
 }
 
 impl AudioThreadHandler {
+    pub fn create_empty() -> Self {
+        let (thread_input, _) = std::sync::mpsc::channel::<AudioThreadMessage>();
+        let (_, thread_output) = std::sync::mpsc::channel::<AudioThreadReply>();
+
+        Self {
+            thread_input,
+            thread_output: Mutex::new(thread_output),
+            sample_players: Arc::new(DashMap::new()),
+        }
+    }
+
     /// Sends a message to the thread and waits for its reply.
     /// If a reply never comes this blocks indefinitely.
     pub fn create_exchange(&self, message: AudioThreadMessage) -> anyhow::Result<AudioThreadReply> {

@@ -114,7 +114,7 @@ pub enum MediaSelectorState {
 pub fn mediapicker_ui(
     this: &Panel,
     ui: &mut Ui,
-    (global_state, audio_handler): (Arc<PanelStates>, Option<Arc<AudioThreadHandler>>),
+    (global_state, audio_handler): (Arc<PanelStates>, Arc<AudioThreadHandler>),
 ) {
     let state = &global_state.media_panel;
 
@@ -544,7 +544,7 @@ fn display_filesystem_map(
     dragged_sample_props: &mut SampleProperties,
     workspace_samples: &IndexMap<PathBuf, WorkspaceSampleAttributes>,
     toasts: Arc<Mutex<Toasts>>,
-    audio_handler: Option<Arc<AudioThreadHandler>>,
+    audio_handler: Arc<AudioThreadHandler>,
 ) {
     for entry in &mut map.objects {
         match entry {
@@ -607,7 +607,7 @@ fn draggable_sample(
     name: std::ffi::OsString,
     path: PathBuf,
     workspace_samples: &IndexMap<PathBuf, WorkspaceSampleAttributes>,
-    audio_handler: Option<Arc<AudioThreadHandler>>,
+    audio_handler: Arc<AudioThreadHandler>,
 ) -> Response {
     ui.horizontal(|ui| {
         let entry = draggable_sample_label(
@@ -655,12 +655,11 @@ fn draggable_sample(
         let id = path_to_number(&path);
 
         // Display that its being played back
-        if let Some(handler) = &audio_handler {
-            if let Some(sample) = handler.sample_players.get(&id) {
-                if !sample.player.is_paused() && !sample.player.empty() {
-                    ui.label(RichText::from("Playing").weak());
-                }
-            }
+        if let Some(sample) = audio_handler.sample_players.get(&id)
+            && !sample.player.is_paused()
+            && !sample.player.empty()
+        {
+            ui.label(RichText::from("Playing").weak());
         }
 
         // If the label is right clicked on - it will automatically display a sample player.
@@ -675,7 +674,7 @@ fn playbackable_sample_preview(
     toasts: Arc<Mutex<Toasts>>,
     name: std::ffi::OsString,
     path: PathBuf,
-    audio_handler: Option<Arc<AudioThreadHandler>>,
+    audio_handler: Arc<AudioThreadHandler>,
     // The id of this sample inside the sample playback handler's list.
     id: u64,
     entry_response: &Response,
@@ -687,15 +686,12 @@ fn playbackable_sample_preview(
             ui.allocate_space(vec2(100., 1.));
 
             // Only enable the whole previewer ui if there is a valid audio thread
-            let sample_previewer = ui.add_enabled_ui(audio_handler.is_some(), |ui| {
                 ui.vertical_centered(|ui| {
                     // Try getting the current sample's entry from the available players
-                    let entry = audio_handler.clone().and_then(|handler| {
-                        handler
+                    let entry = audio_handler
                             .sample_players
                             .get(&id)
-                            .map(|query| query.value().clone())
-                    });
+                            .map(|query| query.value().clone());
 
                     // Get the attributes of the current player if there are any
                     let is_paused = entry
@@ -743,22 +739,13 @@ fn playbackable_sample_preview(
                             );
 
                             // If the seeker is dragged stop the player
-                            if seeker.drag_started() {
-                                let audio_handler = audio_handler
-                                    .clone()
-                                    .expect("Audio handler thread not initalized.");
-
-                                if let Some(query) = audio_handler.sample_players.get(&id) {
+                            if seeker.drag_started()
+                                && let Some(query) = audio_handler.sample_players.get(&id) {
                                     query.player.stop();
                                 }
-                            }
 
                             // If the seeker has been changed, get its value and seek the sample to that duration
                             if seeker.drag_stopped() {
-                                let audio_handler = audio_handler
-                                    .clone()
-                                    .expect("Audio handler thread not initalized.");
-
                                 // If the player was empty re-insert the sample and then run the seeking.
                                 if is_empty {
                                     // Display the error if there were any
@@ -820,10 +807,6 @@ fn playbackable_sample_preview(
                         ui.add_enabled_ui(is_paused || is_empty, |ui| {
                             // Draw play button
                             if ui.button("Play").clicked() {
-                                let audio_handler = audio_handler
-                                    .clone()
-                                    .expect("Audio handler thread not initalized.");
-
                                 // Try checking if there is already a player created since if a sample is paused we would like to continue from there
                                 if let Some(query) = audio_handler.sample_players.get(&id) && !is_empty {
                                     let sample_player = query.value();
@@ -860,12 +843,8 @@ fn playbackable_sample_preview(
 
                         ui.add_enabled_ui(!is_paused, |ui| {
                             // Draw pause button (this does not reset the player)
-                            if ui.button("Pause").clicked() {
-                                let audio_handler = audio_handler
-                                    .clone()
-                                    .expect("Audio handler thread not initalized.");
-
-                                if let Some(query) = audio_handler.sample_players.get(&id) {
+                            if ui.button("Pause").clicked()
+                                && let Some(query) = audio_handler.sample_players.get(&id) {
                                     let sample_player = query.value();
 
                                     // If the sample has already been play through dont let it be paused instead just reset the player if its stopped after its finished
@@ -875,14 +854,9 @@ fn playbackable_sample_preview(
                                         sample_player.player.pause();
                                     }
                                 }
-                            }
 
                             // Draw stop button (this resets the player)
                             if ui.button("Stop").clicked() {
-                                let audio_handler = audio_handler
-                                    .clone()
-                                    .expect("Audio handler thread not initalized.");
-
                                 // We shouldnt remove the player even if it has been stopped since the preferences are stored with the players themselves. (Besides they dont really take up that much space)
                                 if let Some(query) = audio_handler.sample_players.get(&id) {
                                     let sample_player = query.value();
@@ -895,11 +869,6 @@ fn playbackable_sample_preview(
                         // If there is a player for this sample then enable the options for the playback
                         ui.add_enabled_ui(entry.is_some(), |ui| {
                             ui.menu_button("Options", |ui| {
-                                // This only gets ran if the menu button is open.
-                                let audio_handler = audio_handler
-                                        .clone()
-                                        .expect("Audio handler thread not initalized.");
-
                                 // Fetch a mutable reference to the playback preferences
                                 if let Some(mut query) = audio_handler.sample_players.get_mut(&id) {
                                     let preferences = &mut query.value_mut().preferences;
@@ -929,11 +898,6 @@ fn playbackable_sample_preview(
                         });
                     });
                 });
-            });
-
-            sample_previewer
-                .response
-                .on_disabled_hover_text("Audio handler thread is uninitalized.");
         });
 }
 

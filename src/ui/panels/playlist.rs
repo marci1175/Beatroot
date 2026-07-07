@@ -140,7 +140,7 @@ const BPM_PRESETS: &[f32] = &[
 pub fn playlist_ui(
     _this: &Panel,
     ui: &mut Ui,
-    (global_state, _audio_handler): (Arc<PanelStates>, Option<Arc<AudioThreadHandler>>),
+    (global_state, _audio_handler): (Arc<PanelStates>, Arc<AudioThreadHandler>),
 ) {
     let state = &global_state.playlist_panel;
 

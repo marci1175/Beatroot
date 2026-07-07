@@ -1,10 +1,13 @@
 use std::{path::PathBuf, sync::Arc};
 
 use eframe::{App, CreationContext};
-use egui::{Color32, RichText, Sense, vec2};
+use egui::{Color32, RichText, vec2};
 
 use crate::{
-    audio::lib::AudioThreadHandler,
+    audio::{
+        lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread},
+        playback::{HostInformation, MasterPlaybackThread},
+    },
     internals::utils::ExactLengthBuffer,
     project_manager::open_project,
     ui::{
@@ -43,11 +46,38 @@ pub struct Application {
     #[serde(skip)]
     /// The audio handler is a set of channels and atomic data which ensures audio runs on a different thread than main and that both are syncronized.
     /// This thread is used for playing back individual samples. This is only for simple audio playback.
-    pub sample_audio_handler: Option<Arc<AudioThreadHandler>>,
+    pub sample_audio_handler: Arc<AudioThreadHandler>,
+
+    #[serde(skip)]
+    pub master_playback_handler: Arc<MasterPlaybackThread>,
 }
 
 impl Default for Application {
     fn default() -> Self {
+        // Create the host's audio handle
+        let host_audio = Arc::new(
+            HostAudioPlayback::new().expect("Failed to acquire host audio playback handle."),
+        );
+
+        // Create audio playback thread, this thread is only for previewing samples and playing back simple samples.
+        // This is not the main playlist playbacker.
+        let playback_thread_handler = create_playback_thread(host_audio.clone())
+            .expect("Failed to create audio playback thread.");
+
+        // Get config of host
+        let host_cfg = host_audio.sink.config();
+
+        // Create master playback handler
+        // This runs the more complicated playbacks and handles the playlist's playback.
+        let master_playback_handler = MasterPlaybackThread::new(
+            HostInformation {
+                sample_rate: host_cfg.sample_rate().get(),
+                channel_count: host_cfg.channel_count().get(),
+            },
+            host_audio.sink.mixer().clone(),
+        )
+        .expect("Failed to create master playback thread.");
+
         Self {
             // Store the state of the panels separately
             panel_states: Arc::new(PanelStates::default()),
@@ -62,13 +92,15 @@ impl Default for Application {
             save_path: None,
 
             // If there was no audio handler added then just handle it with None.
-            sample_audio_handler: None,
+            sample_audio_handler: Arc::new(playback_thread_handler),
+
+            master_playback_handler: Arc::new(master_playback_handler),
         }
     }
 }
 
 impl AppRoot {
-    pub fn new(cc: &CreationContext, playback_thread_handler: AudioThreadHandler) -> Self {
+    pub fn new(cc: &CreationContext) -> Self {
         // Create a default app root state
         let mut app_root = AppRoot::default();
 
@@ -76,10 +108,6 @@ impl AppRoot {
         if let Some(storage) = cc.storage {
             app_root = eframe::get_value::<AppRoot>(storage, eframe::APP_KEY).unwrap_or_default();
         }
-
-        // Set the application's audio thread handler.
-        // This will get initalized every time so we can actually use a maybe uninit since its initalized every application startup.
-        app_root.application.sample_audio_handler = Some(Arc::new(playback_thread_handler));
 
         // Return state
         app_root
@@ -94,20 +122,6 @@ impl App for AppRoot {
     fn update(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {}
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // Check if the audio handler has been initalized, if not, display the error in the ui, but let the user proceed.
-        if self.application.sample_audio_handler.is_none() {
-            if ui.label(
-                    RichText::new("⚠ No available audio output ⚠")
-                        .small()
-                        .color(ui.visuals().warn_fg_color),
-                )
-                .on_hover_text("The application could not find a viable default audio output. Click for more info.").interact(Sense::click()).clicked() {
-                    self.window_mngr.settings = true;
-                };
-
-            ui.separator();
-        }
-
         // Create the main options bar
         egui::Panel::top("application_options").show_inside(ui, |ui| {
             ui.horizontal(|ui| {

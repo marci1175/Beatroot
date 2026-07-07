@@ -80,7 +80,7 @@ impl Panel {
         &self,
         ui: &mut Ui,
         global_state: Arc<PanelStates>,
-        audio_handler: Option<Arc<AudioThreadHandler>>,
+        audio_handler: Arc<AudioThreadHandler>,
     ) {
         // Match the kind of panel we want to display
         match &self.id {
