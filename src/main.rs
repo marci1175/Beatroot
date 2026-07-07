@@ -1,13 +1,5 @@
-use beatroot::{
-    APP_NAME,
-    app::AppRoot,
-    audio::{
-        lib::{HostAudioPlayback, create_playback_thread},
-        playback::{HostInformation, MasterPlaybackThread},
-    },
-};
+use beatroot::{APP_NAME, app::AppRoot};
 use eframe::NativeOptions;
-use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {

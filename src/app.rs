@@ -16,9 +16,7 @@ use crate::{
     },
 };
 
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(default)]
-#[derive(Default)]
+#[derive(serde::Serialize, serde::Deserialize, Default)]
 pub struct AppRoot {
     /// This field indicates which floating windows are enabled (visible).
     #[serde(skip)]
@@ -101,16 +99,11 @@ impl Default for Application {
 
 impl AppRoot {
     pub fn new(cc: &CreationContext) -> Self {
-        // Create a default app root state
-        let mut app_root = AppRoot::default();
-
-        // Load in state if it has been stored already
         if let Some(storage) = cc.storage {
-            app_root = eframe::get_value::<AppRoot>(storage, eframe::APP_KEY).unwrap_or_default();
+            eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
+        } else {
+            Default::default()
         }
-
-        // Return state
-        app_root
     }
 }
 
@@ -208,6 +201,7 @@ impl App for AppRoot {
                 ui,
                 self.application.panel_states.clone(),
                 self.application.sample_audio_handler.clone(),
+                self.application.master_playback_handler.clone(),
             );
 
             // If the panel is not detached we can display its toasts in the root ui

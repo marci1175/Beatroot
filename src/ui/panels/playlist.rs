@@ -1,17 +1,21 @@
 use std::{collections::HashMap, ops::Add, path::PathBuf, sync::Arc};
 
 use crate::{
-    audio::lib::AudioThreadHandler,
+    audio::{lib::AudioThreadHandler, playback::MasterPlaybackThread},
     internals::{
         sample::{SampleProperties, generate_sample_waveform},
         utils::find_value_inbetween,
     },
+    plugins::fx_chain::NodeMap,
     ui::panels::{
         lib::{Panel, PanelStates, display_error_as_toast, random_color_with_opacity},
         media::WorkspaceSampleAttributes,
     },
 };
-use egui::{Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2, vec2};
+use egui::{
+    Align2, Color32, FontId, PopupAnchor, Pos2, Rect, RectAlign, RichText, Sense, Stroke, Ui, Vec2,
+    vec2,
+};
 use egui_toast::{Toast, ToastStyle};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
@@ -112,6 +116,10 @@ pub struct PlaylistState {
     /// Track customization
     pub custom_tracks: HashMap<usize, TrackCustomization>,
 
+    /// All samples are contained in this map.
+    /// All samples have to line up to one beat (position) and to one track.
+    /// Multiple samples may be present at the same location.
+    /// The index of each entry in this map is unique and can be used to manage effects applied on the samples themselves.
     pub samples: IndexMap<Position, Vec<SampleInstance>>,
 
     pub playback_state: PlaybackState,
@@ -140,7 +148,7 @@ const BPM_PRESETS: &[f32] = &[
 pub fn playlist_ui(
     _this: &Panel,
     ui: &mut Ui,
-    (global_state, _audio_handler): (Arc<PanelStates>, Arc<AudioThreadHandler>),
+    (global_state, master_playback): (Arc<PanelStates>, Arc<MasterPlaybackThread>),
 ) {
     let state = &global_state.playlist_panel;
 
@@ -318,6 +326,7 @@ pub fn playlist_ui(
         &track_lines,
         &beat_lines,
         &preferences,
+        master_playback,
     );
 
     // We are going to have multiple layers of responses each capturing something different
@@ -373,11 +382,14 @@ fn render_samples(
     track_lines: &[[Pos2; 2]],
     beat_lines: &[[Pos2; 2]],
     preferences: &PlaylistPreferences,
+    master_playback: Arc<MasterPlaybackThread>,
 ) {
     // Iterate over the samples and decide which one is in frame.
     let samples = state.read().samples.clone();
 
+    // Iterate over all the positions
     for (pos, samples) in samples {
+        // Iterate over the samples contained in the positions.
         for (sample_idx, sample) in samples.iter().enumerate() {
             // Check if the track is visible based on the track
             if !(pos.track >= before_first_visible_track_idx && pos.track <= last_visible_track_idx)
@@ -519,8 +531,9 @@ fn render_samples(
             // If the sample is dragged, simulate a dnd again
             sample_response.dnd_set_drag_payload(sample.clone());
 
-            // Remove the old position of the sample, if the list is empty
-            if sample_response.drag_stopped() {
+            // Remove the old position of the sample, if the list is empty or if it has been secondary clicked.
+            // (By default this part only removes the node and when I create a dnd payload that can also insert it.)
+            if sample_response.drag_stopped() || sample_response.secondary_clicked() {
                 // Get handle to samples
                 let samples_handle = &mut state.write().samples;
 
@@ -540,6 +553,50 @@ fn render_samples(
                     samples_handle.swap_remove(&pos);
                 }
             }
+
+            // Create a context menu for the node
+            egui::Popup::menu(&sample_response)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .show(|ui| {
+                    // Display sample name
+                    ui.label(RichText::from(&sample.name).weak());
+                    ui.separator();
+
+                    let id = 100;
+
+                    let is_fx_enabled = master_playback.fx_map().contains_key(&id);
+                    let fx_toggle = ui.toggle_value(&mut is_fx_enabled.clone(), match is_fx_enabled {
+                        true => "Disable",
+                        false => "Enable",
+                    });
+
+                    if fx_toggle.clicked() {
+                        if !is_fx_enabled {
+                            master_playback.fx_map().insert(id, NodeMap::new());
+                        } else {
+                            master_playback.fx_map().remove(&id);
+                        }
+                    }
+
+                    // This menubutton is deactivated until an effect map is created manually
+                    ui.add_enabled_ui(master_playback.fx_map().contains_key(&id), |ui| {
+                        // Create a menu button which displays the effects
+                        ui.menu_button("Effects", |ui| {
+                            // Create desired size of the window
+                            let desired_size = vec2(
+                                ui.viewport_rect().width() / 3.,
+                                ui.viewport_rect().height() / 3.,
+                            );
+
+                            // Allocate the ui so that it cannot automatically grow later.
+                            ui.allocate_ui(desired_size, |ui| {
+                                if let Some(mut fx_map) = master_playback.fx_map().get_mut(&id) {
+                                    fx_map.display(ui);
+                                }
+                            });
+                        });
+                    });
+                });
         }
     }
 }

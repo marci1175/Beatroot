@@ -87,7 +87,7 @@ pub struct SampleBuffer {
     /// The count of channels present in the sample.
     channels: u16,
 
-    /// The id of the node that this sample is coming from.
+    /// The id of the node that this sample is coming from. (The nodes which are present in the playlist.)
     /// This is going to be useful when looking up what effects to apply to this sample.
     origin_id: usize,
 
@@ -246,7 +246,7 @@ impl MasterPlaybackThread {
                     }
                     Err(error) => {
                         // Print the error but we shouldnt stop execution
-                        eprintln!("{error}");
+                        eprintln!("Error in Master Playback Thread: {error}");
                     }
                 }
             }

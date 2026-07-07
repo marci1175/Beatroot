@@ -17,7 +17,7 @@ pub const RESAMPLER_CHUNK_SIZE: usize = 1024;
 
 /// Processes samples - this means that this function ensures that all samples match the host's sample rate and desired output.
 pub fn process_samples(
-    _workers: &ThreadPool,
+    workers: &ThreadPool,
     mut original_samples: Vec<SampleBuffer>,
     host_info: HostInformation,
     resampler_params: &SincInterpolationParameters,
@@ -36,7 +36,7 @@ pub fn process_samples(
 
     // Resample samples if sample rates mismatch
     // Load the resampled samples into the original samples vector
-    resample(_workers, original_samples.clone(), &host_info, resamplers)
+    resample(workers, original_samples.clone(), &host_info, resamplers)
         .collect_into_vec(&mut original_samples);
 
     apply_effects(original_samples);

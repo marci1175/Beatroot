@@ -203,7 +203,7 @@ pub fn create_playback_thread(
                     }
                 }
                 Err(_err) => {
-                    eprintln!("Error in Audio Thread: {_err}");
+                    eprintln!("Error in Audio Playback Thread: {_err}");
                 }
             }
         }
