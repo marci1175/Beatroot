@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ops::Add, path::PathBuf, sync::Arc};
 
 use crate::{
-    audio::{lib::AudioThreadHandler, playback::MasterPlaybackThread},
+    audio::playback::MasterPlaybackThread,
     internals::{
         sample::{SampleProperties, generate_sample_waveform},
         utils::find_value_inbetween,
@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use egui::{
-    Align2, Color32, FontId, PopupAnchor, Pos2, Rect, RectAlign, RichText, Sense, Stroke, Ui, Vec2,
+    Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2,
     vec2,
 };
 use egui_toast::{Toast, ToastStyle};

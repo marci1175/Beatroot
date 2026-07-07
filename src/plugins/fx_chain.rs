@@ -1,6 +1,6 @@
 use std::collections::LinkedList;
 
-use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
+use egui::{Color32, Pos2, Sense, Stroke, Vec2, vec2};
 
 pub struct UiAttributes {
     scale: f32,
@@ -151,7 +151,7 @@ impl NodeMap {
             };
 
             // Connect the last and the current connector's rect if there was a node already
-            if let Some(last_connector_pos) = last_connector_pos.clone() {
+            if let Some(last_connector_pos) = last_connector_pos {
                 ui.painter().with_clip_rect(available_rect).line(
                     vec![last_connector_pos, current_connector_pos],
                     Stroke::new(2.0_f32, Color32::WHITE),
