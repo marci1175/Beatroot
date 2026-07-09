@@ -12,10 +12,7 @@ use crate::{
         media::WorkspaceSampleAttributes,
     },
 };
-use egui::{
-    Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2,
-    vec2,
-};
+use egui::{Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2, vec2};
 use egui_toast::{Toast, ToastStyle};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
@@ -565,10 +562,13 @@ fn render_samples(
                     let id = 100;
 
                     let is_fx_enabled = master_playback.fx_map().contains_key(&id);
-                    let fx_toggle = ui.toggle_value(&mut is_fx_enabled.clone(), match is_fx_enabled {
-                        true => "Disable",
-                        false => "Enable",
-                    });
+                    let fx_toggle = ui.toggle_value(
+                        &mut is_fx_enabled.clone(),
+                        match is_fx_enabled {
+                            true => "Disable",
+                            false => "Enable",
+                        },
+                    );
 
                     if fx_toggle.clicked() {
                         if !is_fx_enabled {

@@ -1,6 +1,8 @@
-use std::collections::LinkedList;
+use std::collections::{HashSet, LinkedList};
 
-use egui::{Color32, Pos2, Sense, Stroke, Vec2, vec2};
+use egui::{Align2, AtomExt, Color32, Pos2, RichText, Sense, Stroke, Vec2, vec2};
+
+use crate::plugins::fx_chain::ConnectorSide::{Left, Right};
 
 pub struct UiAttributes {
     scale: f32,
@@ -19,19 +21,106 @@ impl Default for UiAttributes {
 }
 
 pub struct NodeMap {
-    connection_order: LinkedList<Node>,
+    /// The nodes which are contained by the map.
+    /// When referring to a node's id we are referring to its index in this list.
+    nodes: Vec<Node>,
+
+    /// The attributes of this [`NodeMap`] in the Ui.
     ui_attributes: UiAttributes,
+
+    /// The currently selected node's id.
+    /// This is used to edit or remove a node from the map.
+    currently_selected_node_id: Option<usize>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ConnectorSide {
+    Left,
+    Right,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+/// A node connector indicates what node id it is connected to.
+pub enum NodeConnector {
+    Single(usize),
+    Multiple(Vec<usize>),
+}
+
+pub enum NodeType {
+    /// Main sample in.
+    /// This is where the (resampled) original samples flow into the map.
+    In,
+
+    /// Main sample out.
+    /// This is where the final samples flow out of the map after all the effects (if any) have been applied to them.
+    Out,
+
+    /// Plugin node.
+    /// This node manages the underlying VST plugin's effects on the samples in the effects chain.
+    Plugin,
+}
+
+pub struct Node {
+    /// The type of this node.
+    /// This could be a custom (user made) node - or the default in or out nodes.
+    node_type: NodeType,
+
+    /// The connection this node has to others. (Please note that a node does not have to have all its connectors populated.)
+    node_connection: NodeConnection,
+    
+    /// The position of the node in the nodemap.
+    position: Pos2,
+
+    /// The size of this node.
+    /// The node may be resized if there are multiple connectors on its side.
+    size: Vec2,
+}
+
+/// All nodes can have one or more connectors on its left and right side.
+/// The first item in this array serves as the left and the second as the right side of the node.
+pub type NodeConnection = [Option<NodeConnector>; 2];
+
+impl Node {
+    pub fn new(
+        node_type: NodeType,
+        position: Pos2,
+        size: Vec2,
+        node_connection: NodeConnection,
+    ) -> Self {
+        Self {
+            node_type,
+            position,
+            size,
+            node_connection,
+        }
+    }
 }
 
 impl NodeMap {
     /// Constructs an empty nodemap.
     pub fn new() -> Self {
         Self {
-            connection_order: LinkedList::from([
-                Node::new(NodeType::In, Pos2::new(-300.0, 0.), vec2(80., 25.)),
-                Node::new(NodeType::Out, Pos2::new(300., 0.), vec2(80., 25.)),
+            // Create the two default nodes in every effects chain.
+            nodes: Vec::from([
+                Node::new(
+                    // Set the type of this node.
+                    NodeType::In,
+                    Pos2::new(-300.0, 0.),
+                    vec2(80., 25.),
+                    // This node (main in) is connected to the 2nd item of this default list (idx 1) by default.
+                    [None, Some(NodeConnector::Single(1))],
+                ),
+                Node::new(
+                    // Set the type of this node.
+                    NodeType::Out,
+                    Pos2::new(300., 0.),
+                    vec2(80., 25.),
+                    // This node (main out) is connected to the 1st item of this default list (idx 0) by default.
+                    [Some(NodeConnector::Single(0)), None],
+                ),
             ]),
             ui_attributes: UiAttributes::default(),
+            currently_selected_node_id: None,
         }
     }
 
@@ -64,11 +153,8 @@ impl NodeMap {
             available_rect.top() + available_rect.height() / 2.,
         );
 
-        // The last node's connector's location - the next node will automatically connect to that and set its out port to the next nodes in.
-        let mut last_connector_pos: Option<Pos2> = None;
-
         // Draw the nodes themselves
-        for node in &mut self.connection_order {
+        for node in &mut self.nodes {
             // Draw the actual nodes themselves
             let center = Pos2::new(
                 reference_point.x
@@ -97,6 +183,7 @@ impl NodeMap {
                     match node.node_type {
                         NodeType::In => "Input",
                         NodeType::Out => "Output",
+                        NodeType::Plugin => "Plugin",
                     }
                     .to_string(),
                     egui::FontId::proportional(10.0 * self.ui_attributes.scale),
@@ -105,10 +192,13 @@ impl NodeMap {
                 )
             });
 
+            // Calculate center of text
+            let text_pos = center - galley.size() / 2.0;
+
             // Draw the name of the node
             ui.painter()
                 .with_clip_rect(available_rect)
-                .galley(center, galley, Color32::WHITE);
+                .galley(text_pos, galley, Color32::WHITE);
 
             let node_response = ui.allocate_rect(node_rect, Sense::click_and_drag());
 
@@ -119,47 +209,53 @@ impl NodeMap {
             }
 
             // Draw connectors on each end (or either end) based on the node's type
-            let current_connector_pos = match node.node_type {
+            match node.node_type {
                 // Samples coming in, left side of the screen.
                 NodeType::In => {
                     // Fetch the connector's rect
-                    let connector_pos =
-                        Pos2::new(node_rect.right(), node_rect.top() + node_rect.height() / 2.);
+                    let connector_pos = calculate_connector_pos(
+                        node_rect,
+                        Right,
+                        node.node_connection[1].clone().unwrap(),
+                    );
+                    let node_rect = egui::Rect::from_center_size(connector_pos, vec2(10., 10.));
+
+                    // Create a menu for the node if clicked
+                    egui::Popup::menu(&node_response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+                        ui.label(RichText::from("This is the main `In` node. This is the starting point of the samples' pipleline in the effects chain."))
+                    });
+
                     // Paint connector
                     ui.painter().with_clip_rect(available_rect).rect_filled(
-                        egui::Rect::from_center_size(connector_pos, vec2(10., 10.)),
+                        node_rect,
                         0.,
                         Color32::RED,
                     );
-
-                    connector_pos
                 }
                 // Samples going out, right side of the screen. (normally)
                 NodeType::Out => {
                     // Fetch the connector's rect
-                    let connector_pos =
-                        Pos2::new(node_rect.left(), node_rect.top() + node_rect.height() / 2.);
+                    let connector_pos = calculate_connector_pos(
+                        node_rect,
+                        Left,
+                        node.node_connection[0].clone().unwrap(),
+                    );
+                    let node_rect = egui::Rect::from_center_size(connector_pos, vec2(10., 10.));
+
+                    // Create a menu for the node if clicked
+                    egui::Popup::menu(&node_response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+                        ui.label(RichText::from("This is the main `Out` node. This is the end point of the samples' pipleline in the effects chain. The information that enters this node gets sent to the mixer."))
+                    });
+
                     // Paint connector
                     ui.painter().with_clip_rect(available_rect).rect_filled(
-                        egui::Rect::from_center_size(connector_pos, vec2(10., 10.)),
+                        node_rect,
                         0.,
                         Color32::BLUE,
                     );
-
-                    connector_pos
                 }
+                NodeType::Plugin => {}
             };
-
-            // Connect the last and the current connector's rect if there was a node already
-            if let Some(last_connector_pos) = last_connector_pos {
-                ui.painter().with_clip_rect(available_rect).line(
-                    vec![last_connector_pos, current_connector_pos],
-                    Stroke::new(2.0_f32, Color32::WHITE),
-                );
-            }
-
-            // Update last connector position
-            last_connector_pos = Some(current_connector_pos);
         }
     }
 
@@ -206,29 +302,14 @@ impl NodeMap {
     }
 }
 
-pub enum NodeType {
-    /// Main sample in.
-    /// This is where the (resampled) original samples flow into the map.
-    In,
-
-    /// Main sample out.
-    /// This is where the final samples flow out of the map after all the effects (if any) have been applied to them.
-    Out,
-}
-
-pub struct Node {
-    node_type: NodeType,
-
-    position: Pos2,
-    size: Vec2,
-}
-
-impl Node {
-    pub fn new(node_type: NodeType, position: Pos2, size: Vec2) -> Self {
-        Self {
-            node_type,
-            position,
-            size,
-        }
+fn calculate_connector_pos(
+    node_rect: egui::Rect,
+    side: ConnectorSide,
+    conn_type: NodeConnector,
+) -> Pos2 {
+    if side == ConnectorSide::Right {
+        Pos2::new(node_rect.right(), node_rect.top() + node_rect.height() / 2.)
+    } else {
+        Pos2::new(node_rect.left(), node_rect.top() + node_rect.height() / 2.)
     }
 }

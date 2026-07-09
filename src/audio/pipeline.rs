@@ -18,12 +18,15 @@ pub const RESAMPLER_CHUNK_SIZE: usize = 1024;
 /// Processes samples - this means that this function ensures that all samples match the host's sample rate and desired output.
 pub fn process_samples(
     workers: &ThreadPool,
-    mut original_samples: Vec<SampleBuffer>,
+    original_samples: Vec<SampleBuffer>,
     host_info: HostInformation,
     resampler_params: &SincInterpolationParameters,
     processed_samples: &mut Vec<SampleBuffer>,
     resamplers: Arc<DashMap<u32, Mutex<Async<f32>>>>,
 ) -> anyhow::Result<()> {
+    // Clear processed sample buffer
+    processed_samples.clear();
+
     // Make the list of processed samples big enough for the samples to fit
     processed_samples.reserve(
         original_samples
@@ -36,10 +39,10 @@ pub fn process_samples(
 
     // Resample samples if sample rates mismatch
     // Load the resampled samples into the original samples vector
-    resample(workers, original_samples.clone(), &host_info, resamplers)
-        .collect_into_vec(&mut original_samples);
+    resample(workers, original_samples, &host_info, resamplers).collect_into_vec(processed_samples);
 
-    apply_effects(original_samples);
+    // Apply effects to each sample
+    apply_effects(processed_samples);
 
     Ok(())
 }
@@ -124,4 +127,4 @@ fn resample(
     })
 }
 
-fn apply_effects(_samples: Vec<SampleBuffer>) {}
+fn apply_effects(samples: &mut Vec<SampleBuffer>) {}
