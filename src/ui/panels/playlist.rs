@@ -553,7 +553,7 @@ fn render_samples(
 
             // Create a context menu for the node
             egui::Popup::menu(&sample_response)
-                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .close_behavior(egui::PopupCloseBehavior::IgnoreClicks)
                 .show(|ui| {
                     // Display sample name
                     ui.label(RichText::from(&sample.name).weak());
@@ -593,6 +593,14 @@ fn render_samples(
                                 if let Some(mut fx_map) = master_playback.fx_map().get_mut(&id) {
                                     fx_map.display(ui);
                                 }
+                            });
+
+                            ui.separator();
+
+                            ui.horizontal(|ui| {
+                                if ui.button("Add").clicked() {}
+
+                                if ui.button("Remove").clicked() {}
                             });
                         });
                     });

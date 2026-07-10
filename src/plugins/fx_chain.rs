@@ -1,10 +1,12 @@
 use std::collections::{HashSet, LinkedList};
 
-use egui::{Align2, AtomExt, Color32, Pos2, RichText, Sense, Stroke, Vec2, vec2};
+use egui::{Align2, AtomExt, Color32, Pos2, Rect, RichText, Sense, Stroke, Vec2, vec2};
+use strum::{EnumCount, VariantArray};
 
-use crate::plugins::fx_chain::ConnectorSide::{Left, Right};
-
+#[derive(Debug, Clone, Copy)]
+/// The attributes of an object in the Ui.
 pub struct UiAttributes {
+    /// How far are we zoomed in. (2.0 => 2x)
     scale: f32,
 
     /// How much the user has dragged the whole map.
@@ -28,24 +30,69 @@ pub struct NodeMap {
     /// The attributes of this [`NodeMap`] in the Ui.
     ui_attributes: UiAttributes,
 
+    /// The connections between the nodes.
+    /// This is vital for the creation of the effects chain.
+    /// Dont forget to call `make_connection` on the two [`ConnectorID`]-s we are planning to insert so that order wont matter.
+    node_connections: HashSet<[ConnectorID; 2]>,
+
     /// The currently selected node's id.
     /// This is used to edit or remove a node from the map.
     currently_selected_node_id: Option<usize>,
+
+    currently_selected_connector: Option<ConnectorID>,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum ConnectorSide {
-    Left,
-    Right,
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    // ------------
+    // These two implemented so that we can always order the ConnectorIDs present in a connection so that connector order doesnt matter.
+    // Do not forget to call `create_connection` every time a connection is inserted into `node_connections`
+    // ------------
+
+    // ------------
+    PartialOrd,
+    Ord,
+    // ------------
+)]
+pub struct ConnectorID {
+    pub node_id: usize,
+    pub side: Side,
+    pub connector_idx: usize,
+    pub connector_count: usize,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-/// A node connector indicates what node id it is connected to.
-pub enum NodeConnector {
-    Single(usize),
-    Multiple(Vec<usize>),
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, strum::EnumCount, strum::VariantArray,
+)]
+pub enum Side {
+    Left = 0,
+    Right = 1,
+    Bottom = 2,
 }
 
+impl Side {
+    pub fn to_color(&self) -> Color32 {
+        match self {
+            Side::Left => Color32::BLUE,
+            Side::Right => Color32::RED,
+            Side::Bottom => Color32::WHITE,
+        }
+    }
+}
+
+fn create_connection([a, b]: [ConnectorID; 2]) -> [ConnectorID; 2] {
+    if a <= b { [a, b] } else { [b, a] }
+}
+
+#[derive(Debug, Clone)]
+pub struct PluginNodeProperties {}
+
+#[derive(Debug, Clone)]
 pub enum NodeType {
     /// Main sample in.
     /// This is where the (resampled) original samples flow into the map.
@@ -57,42 +104,56 @@ pub enum NodeType {
 
     /// Plugin node.
     /// This node manages the underlying VST plugin's effects on the samples in the effects chain.
-    Plugin,
+    ExternalPlugin,
+
+    InternalCustom(PluginNodeProperties),
 }
 
+/// Size of a connector's own box.
+const CONNECTOR_SIZE: f32 = 20.0;
+/// Gap between adjacent connectors.
+const CONNECTOR_GAP: f32 = 10.0;
+/// Spacing between dots in world-space units (before scaling).
+const BACKGROUND_DOT_SPACING: f32 = 15.0;
+
+#[derive(Debug, Clone)]
 pub struct Node {
     /// The type of this node.
     /// This could be a custom (user made) node - or the default in or out nodes.
     node_type: NodeType,
 
-    /// The connection this node has to others. (Please note that a node does not have to have all its connectors populated.)
-    node_connection: NodeConnection,
-    
     /// The position of the node in the nodemap.
     position: Pos2,
 
+    /// Shows the number of connectors on each side of the node.
+    /// A connectors size is 20.0 in every direction.
+    /// The amount of sides may change in the future, but for now treat it as 3 (left, right, bottom).
+    /// When creating the array of numbers containing the number of connectors on the nodes sides the directions' order follow as: `left, right, bottom`.
+    connectors: [usize; Side::COUNT],
+
     /// The size of this node.
+    /// This is calculated when the node is created. (Calulated by the maximum amount of connectors on either its left or right side and bottom.)
     /// The node may be resized if there are multiple connectors on its side.
     size: Vec2,
 }
 
-/// All nodes can have one or more connectors on its left and right side.
-/// The first item in this array serves as the left and the second as the right side of the node.
-pub type NodeConnection = [Option<NodeConnector>; 2];
-
 impl Node {
-    pub fn new(
-        node_type: NodeType,
-        position: Pos2,
-        size: Vec2,
-        node_connection: NodeConnection,
-    ) -> Self {
+    pub fn new(node_type: NodeType, position: Pos2, connectors: [usize; Side::COUNT]) -> Self {
         Self {
             node_type,
             position,
-            size,
-            node_connection,
+            size: Node::calculate_size(connectors),
+            connectors,
         }
+    }
+
+    /// Calculates the size of the node based on its connectors.
+    pub fn calculate_size(connectors: [usize; Side::COUNT]) -> Vec2 {
+        vec2(
+            80.0 + (connectors[2] as f32 * (CONNECTOR_SIZE + 10.0)),
+            //
+            25.0 + (connectors[0].max(connectors[1]) as f32 * (CONNECTOR_SIZE + 10.0)),
+        )
     }
 }
 
@@ -106,21 +167,24 @@ impl NodeMap {
                     // Set the type of this node.
                     NodeType::In,
                     Pos2::new(-300.0, 0.),
-                    vec2(80., 25.),
-                    // This node (main in) is connected to the 2nd item of this default list (idx 1) by default.
-                    [None, Some(NodeConnector::Single(1))],
+                    [0, 1, 0],
                 ),
                 Node::new(
                     // Set the type of this node.
                     NodeType::Out,
                     Pos2::new(300., 0.),
-                    vec2(80., 25.),
-                    // This node (main out) is connected to the 1st item of this default list (idx 0) by default.
-                    [Some(NodeConnector::Single(0)), None],
+                    [1, 0, 0],
+                ),
+                Node::new(
+                    NodeType::InternalCustom(PluginNodeProperties {}),
+                    Pos2::default(),
+                    [1, 4, 10],
                 ),
             ]),
             ui_attributes: UiAttributes::default(),
             currently_selected_node_id: None,
+            currently_selected_connector: None,
+            node_connections: HashSet::new(),
         }
     }
 
@@ -132,29 +196,114 @@ impl NodeMap {
 
         let available_rect = ui.max_rect();
 
-        // Display the background of the map
-        self.display_background(ui, available_rect);
-
-        // Allocate a response over the whole map which other responses will later lay on and steal the input.
-        let bg = ui.allocate_rect(available_rect, Sense::click_and_drag());
-
-        self.ui_attributes.offset += bg.drag_delta();
-
-        if bg.hovered() {
-            let scroll_delta = ui.input(|reader| reader.smooth_scroll_delta()).y;
-
-            self.ui_attributes.scale =
-                (self.ui_attributes.scale + scroll_delta * 0.01).clamp(0.1, 5.0);
-        }
-
         // This will serve as the center point of out map.
         let reference_point = Pos2::new(
             available_rect.left() + available_rect.width() / 2.,
             available_rect.top() + available_rect.height() / 2.,
         );
 
+        // Display the background of the map
+        self.display_background(ui, available_rect, reference_point);
+
+        // Allocate the response for the background so that it becomes draggable but other nodes can steal the input.
+        let bg_drag = ui.allocate_rect(available_rect, Sense::drag());
+        self.ui_attributes.offset += bg_drag.drag_delta();
+
+        self.draw_nodes(ui, available_rect, reference_point);
+        self.draw_unfinished_connection_to_cursor(ui, available_rect, reference_point);
+        self.draw_connections(ui, available_rect, reference_point);
+
+        // Allocate the respones for the background's zoom so that the map will always be able to resize.
+        let bg = ui.allocate_rect(available_rect, Sense::hover());
+        if bg.hovered() {
+            let scroll_delta = ui.input(|reader| reader.smooth_scroll_delta()).y;
+
+            self.ui_attributes.scale =
+                (self.ui_attributes.scale + scroll_delta * 0.01).clamp(0.1, 5.0);
+        }
+    }
+
+    fn draw_unfinished_connection_to_cursor(
+        &mut self,
+        ui: &mut egui::Ui,
+        available_rect: egui::Rect,
+        reference_point: Pos2,
+    ) {
+        // If there is an ongoing dragged connector then preview the line to the cursor
+        if let Some(connector) = &self.currently_selected_connector {
+            let connector_node = &self.nodes[connector.node_id];
+
+            // Fetch the connector's pos which has been selected
+            let connector_pos = calculate_connector_pos(
+                egui::Rect::from_center_size(
+                    connector_node.position * self.ui_attributes.scale + self.ui_attributes.offset,
+                    connector_node.size * self.ui_attributes.scale,
+                ),
+                connector.side,
+                connector.connector_idx,
+                connector.connector_count,
+                self.ui_attributes.scale,
+            ) + reference_point.to_vec2();
+
+            // Draw the line to the cursor
+            if let Some(pointer_pos) = ui.input(|reader| reader.pointer.latest_pos()) {
+                ui.painter().with_clip_rect(available_rect).line(
+                    [connector_pos, pointer_pos].to_vec(),
+                    Stroke::new(1.0_f32, Color32::WHITE),
+                );
+            }
+        }
+    }
+
+    fn draw_connections(
+        &mut self,
+        ui: &mut egui::Ui,
+        available_rect: egui::Rect,
+        reference_point: Pos2,
+    ) {
+        // Draw the connections between the nodes
+        for [lhs, rhs] in &self.node_connections {
+            // Get each node where its coming from
+            let lhs_node = &self.nodes[lhs.node_id];
+            let rhs_node = &self.nodes[rhs.node_id];
+
+            // Paint the lines themselves
+            let points = [
+                calculate_connector_pos(
+                    egui::Rect::from_center_size(
+                        lhs_node.position * self.ui_attributes.scale + self.ui_attributes.offset,
+                        lhs_node.size * self.ui_attributes.scale,
+                    ),
+                    lhs.side,
+                    lhs.connector_idx,
+                    lhs.connector_count,
+                    self.ui_attributes.scale,
+                ) + reference_point.to_vec2(),
+                calculate_connector_pos(
+                    egui::Rect::from_center_size(
+                        rhs_node.position * self.ui_attributes.scale + self.ui_attributes.offset,
+                        rhs_node.size * self.ui_attributes.scale,
+                    ),
+                    rhs.side,
+                    rhs.connector_idx,
+                    rhs.connector_count,
+                    self.ui_attributes.scale,
+                ) + reference_point.to_vec2(),
+            ]
+            .to_vec();
+
+            ui.painter()
+                .with_clip_rect(available_rect)
+                .line(points, Stroke::new(1.0_f32, Color32::WHITE));
+
+            // Allocate a response for the line to detect if it has been clicked.
+            // ui.allocate_rect(rect, sense);
+        }
+    }
+
+    fn draw_nodes(&mut self, ui: &mut egui::Ui, available_rect: egui::Rect, reference_point: Pos2) {
         // Draw the nodes themselves
-        for node in &mut self.nodes {
+        for (node_id, node) in self.nodes.clone().iter().enumerate() {
             // Draw the actual nodes themselves
             let center = Pos2::new(
                 reference_point.x
@@ -167,8 +316,6 @@ impl NodeMap {
 
             let node_rect =
                 egui::Rect::from_center_size(center, node.size * self.ui_attributes.scale);
-
-            let node_rect = node_rect.intersect(available_rect);
 
             // Draw the body of the node
             ui.painter().with_clip_rect(available_rect).rect_filled(
@@ -183,7 +330,8 @@ impl NodeMap {
                     match node.node_type {
                         NodeType::In => "Input",
                         NodeType::Out => "Output",
-                        NodeType::Plugin => "Plugin",
+                        NodeType::ExternalPlugin => "Plugin",
+                        NodeType::InternalCustom(_) => "Built-in",
                     }
                     .to_string(),
                     egui::FontId::proportional(10.0 * self.ui_attributes.scale),
@@ -200,66 +348,120 @@ impl NodeMap {
                 .with_clip_rect(available_rect)
                 .galley(text_pos, galley, Color32::WHITE);
 
-            let node_response = ui.allocate_rect(node_rect, Sense::click_and_drag());
+            let node_ui_id = ui.id().with(("node", node_id));
+            let node_response = ui.interact(node_rect, node_ui_id, Sense::click_and_drag());
 
             if node_response.dragged() {
                 // drag_delta() is in screen pixels; divide by scale to convert
                 // that screen-space movement into the node's local coordinate space.
-                node.position += node_response.drag_delta() / self.ui_attributes.scale;
+                self.nodes[node_id].position +=
+                    node_response.drag_delta() / self.ui_attributes.scale;
             }
 
-            // Draw connectors on each end (or either end) based on the node's type
-            match node.node_type {
+            // If the node was clicked on save it as selected.
+            // The user can manage it from anywhere else.
+            if node_response.clicked() {
+                self.currently_selected_node_id = Some(node_id);
+            }
+
+            // Match the nodes type and do something based on that.
+            match &node.node_type {
                 // Samples coming in, left side of the screen.
                 NodeType::In => {
-                    // Fetch the connector's rect
-                    let connector_pos = calculate_connector_pos(
-                        node_rect,
-                        Right,
-                        node.node_connection[1].clone().unwrap(),
-                    );
-                    let node_rect = egui::Rect::from_center_size(connector_pos, vec2(10., 10.));
-
-                    // Create a menu for the node if clicked
-                    egui::Popup::menu(&node_response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-                        ui.label(RichText::from("This is the main `In` node. This is the starting point of the samples' pipleline in the effects chain."))
-                    });
-
-                    // Paint connector
-                    ui.painter().with_clip_rect(available_rect).rect_filled(
-                        node_rect,
-                        0.,
-                        Color32::RED,
-                    );
+                    // Display information if hovered
+                    node_response.on_hover_text("This is the main `In` node. This is the starting point of the samples' pipeline in the effects chain.");
                 }
                 // Samples going out, right side of the screen. (normally)
                 NodeType::Out => {
-                    // Fetch the connector's rect
+                    // Display information if hovered
+                    node_response.on_hover_text("This is the main `Out` node. This is the end point of the samples' pipleline in the effects chain. The information that enters this node gets sent to the mixer.");
+                }
+                NodeType::ExternalPlugin => {}
+                NodeType::InternalCustom(props) => {
+                    // Create the connectors for a node with any number of connectors
+                }
+            };
+
+            // Draw connectors and sense clicks on the connectors
+            let mut clicked_connector: Option<ConnectorID> = None;
+
+            // Iter over all the connectors and try to see if there was a click
+            // All of the connectors space (width or height) have been pre-allocated (by default)
+            for (idx, direction) in Side::VARIANTS.iter().enumerate() {
+                // Get the number of connectors on this side
+                let connector_count = node.connectors[idx];
+
+                for connector_idx in 0..connector_count {
+                    // Fetch the position of the connector and create a rect at the position
                     let connector_pos = calculate_connector_pos(
                         node_rect,
-                        Left,
-                        node.node_connection[0].clone().unwrap(),
+                        *direction,
+                        connector_idx,
+                        connector_count,
+                        self.ui_attributes.scale,
                     );
-                    let node_rect = egui::Rect::from_center_size(connector_pos, vec2(10., 10.));
+                    let connector_rect = Rect::from_center_size(
+                        connector_pos,
+                        Vec2::new(CONNECTOR_SIZE, CONNECTOR_SIZE) * self.ui_attributes.scale,
+                    );
 
-                    // Create a menu for the node if clicked
-                    egui::Popup::menu(&node_response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-                        ui.label(RichText::from("This is the main `Out` node. This is the end point of the samples' pipleline in the effects chain. The information that enters this node gets sent to the mixer."))
-                    });
-
-                    // Paint connector
+                    // Draw the connector with the correct color
                     ui.painter().with_clip_rect(available_rect).rect_filled(
-                        node_rect,
+                        connector_rect,
                         0.,
-                        Color32::BLUE,
+                        direction.to_color(),
                     );
+
+                    let connector_ui_id = ui.id().with(("connector", node_id, idx, connector_idx));
+
+                    // Allocate a response at the rect
+                    let connector = ui.interact(connector_rect, connector_ui_id, Sense::click());
+
+                    // If the connector was clicked set the appropriate variable
+                    if connector.clicked() {
+                        clicked_connector = Some(ConnectorID {
+                            node_id,
+                            side: *direction,
+                            connector_idx,
+                            connector_count,
+                        })
+                    }
                 }
-                NodeType::Plugin => {}
-            };
+            }
+
+            // If a connector was clicked try to make a connection
+            if let Some(clicked_connector) = clicked_connector {
+                match self.currently_selected_connector.clone() {
+                    Some(selected) => {
+                        // Check if we are not trying to short circuit the path. (ie connecting a node to intself)
+                        if selected.node_id != clicked_connector.node_id {
+                            // Insert only if its correct
+                            self.node_connections
+                                .insert(create_connection([selected, clicked_connector]));
+
+                            // Only reset the currently dragged if we actually inserted smth
+                            self.currently_selected_connector = None;
+                        }
+                        // If the user clicked on the same connector reset the selected connector.
+                        else if selected == clicked_connector {
+                            self.currently_selected_connector = None;
+                        }
+                    }
+                    None => {
+                        // If there are no selected node connectors then select the current one.
+                        self.currently_selected_connector = Some(clicked_connector);
+                    }
+                }
+            }
         }
     }
 
-    fn display_background(&self, ui: &mut egui::Ui, available_rect: egui::Rect) {
+    fn display_background(
+        &self,
+        ui: &mut egui::Ui,
+        available_rect: egui::Rect,
+        reference_point: Pos2,
+    ) {
         // Display a black background in the available ui
         ui.painter().rect_filled(available_rect, 5., Color32::BLACK);
 
@@ -271,10 +473,10 @@ impl NodeMap {
         // Get maximum x coordinate
         let max_x = available_rect.right();
 
-        let start_x =
-            available_rect.left() + self.ui_attributes.offset.x.rem_euclid(spacing) - spacing;
-        let start_y =
-            available_rect.top() + self.ui_attributes.offset.y.rem_euclid(spacing) - spacing;
+        let origin = reference_point + self.ui_attributes.offset;
+
+        let start_x = origin.x + ((available_rect.left() - origin.x) / spacing).floor() * spacing;
+        let start_y = origin.y + ((available_rect.top() - origin.y) / spacing).floor() * spacing;
 
         let mut y_coord = start_y;
 
@@ -304,12 +506,43 @@ impl NodeMap {
 
 fn calculate_connector_pos(
     node_rect: egui::Rect,
-    side: ConnectorSide,
-    conn_type: NodeConnector,
+    side: Side,
+    connector_idx: usize,
+    connector_count: usize,
+    scale: f32,
 ) -> Pos2 {
-    if side == ConnectorSide::Right {
-        Pos2::new(node_rect.right(), node_rect.top() + node_rect.height() / 2.)
-    } else {
-        Pos2::new(node_rect.left(), node_rect.top() + node_rect.height() / 2.)
+    debug_assert!(connector_count > 0, "connector_count must be > 0");
+    debug_assert!(
+        connector_idx < connector_count,
+        "connector_idx {connector_idx} out of bounds for connector_count {connector_count}"
+    );
+
+    // Scale the layout constants to match the (already-scaled) node_rect.
+    let connector_size = CONNECTOR_SIZE * scale;
+    let connector_gap = CONNECTOR_GAP * scale;
+    let connector_step = connector_size + connector_gap;
+
+    // Total length occupied by all connectors + gaps between them (no trailing gap).
+    let total_span =
+        connector_count as f32 * connector_size + (connector_count as f32 - 1.0) * connector_gap;
+
+    match side {
+        Side::Left | Side::Right => {
+            let start = (node_rect.height() - total_span) / 2.0;
+            let offset = start + connector_idx as f32 * connector_step + connector_size / 2.0;
+
+            let x = if side == Side::Right {
+                node_rect.right()
+            } else {
+                node_rect.left()
+            };
+            Pos2::new(x, node_rect.top() + offset)
+        }
+        Side::Bottom => {
+            let start = (node_rect.width() - total_span) / 2.0;
+            let offset = start + connector_idx as f32 * connector_step + connector_size / 2.0;
+
+            Pos2::new(node_rect.left() + offset, node_rect.bottom())
+        }
     }
 }
