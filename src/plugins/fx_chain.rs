@@ -419,12 +419,19 @@ impl NodeMap {
 
                     // If the connector was clicked set the appropriate variable
                     if connector.clicked() {
-                        clicked_connector = Some(ConnectorID {
+                        // Create the connector_id instance 
+                        let current_connector_id = ConnectorID {
                             node_id,
                             side: *direction,
                             connector_idx,
                             connector_count,
-                        })
+                        };
+
+                        // Remove the connector from every connection its mentioned in
+                        self.node_connections.retain(|connection| connection[0] != current_connector_id && connection[1] != current_connector_id);
+
+                        // Save the clicked connector
+                        clicked_connector = Some(current_connector_id)
                     }
                 }
             }
