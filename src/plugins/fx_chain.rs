@@ -25,21 +25,21 @@ impl Default for UiAttributes {
 pub struct NodeMap {
     /// The nodes which are contained by the map.
     /// When referring to a node's id we are referring to its index in this list.
-    nodes: Vec<Node>,
+    pub nodes: Vec<Node>,
 
     /// The attributes of this [`NodeMap`] in the Ui.
-    ui_attributes: UiAttributes,
+    pub ui_attributes: UiAttributes,
 
     /// The connections between the nodes.
     /// This is vital for the creation of the effects chain.
     /// Dont forget to call `make_connection` on the two [`ConnectorID`]-s we are planning to insert so that order wont matter.
-    node_connections: HashSet<[ConnectorID; 2]>,
+    pub node_connections: HashSet<[ConnectorID; 2]>,
 
     /// The currently selected node's id.
     /// This is used to edit or remove a node from the map.
-    currently_selected_node_id: Option<usize>,
+    pub currently_selected_node_id: Option<usize>,
 
-    currently_selected_connector: Option<ConnectorID>,
+    pub currently_selected_connector: Option<ConnectorID>,
 }
 
 #[derive(
@@ -89,10 +89,10 @@ fn create_connection([a, b]: [ConnectorID; 2]) -> [ConnectorID; 2] {
     if a <= b { [a, b] } else { [b, a] }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PluginNodeProperties {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum NodeType {
     /// Main sample in.
     /// This is where the (resampled) original samples flow into the map.
@@ -154,6 +154,10 @@ impl Node {
             //
             25.0 + (connectors[0].max(connectors[1]) as f32 * (CONNECTOR_SIZE + 10.0)),
         )
+    }
+
+    pub fn node_type(&self) -> &NodeType {
+        &self.node_type
     }
 }
 
@@ -295,9 +299,6 @@ impl NodeMap {
             ui.painter()
                 .with_clip_rect(available_rect)
                 .line(points, Stroke::new(1.0_f32, Color32::WHITE));
-
-            // Allocate a response for the line to detect if it has been clicked.
-            // ui.allocate_rect(rect, sense);
         }
     }
 
@@ -321,7 +322,14 @@ impl NodeMap {
             ui.painter().with_clip_rect(available_rect).rect_filled(
                 node_rect,
                 1.,
-                Color32::DARK_GRAY,
+                // Fill the rect of the node with the specified color
+                {
+                    if self.currently_selected_node_id == Some(node_id) {
+                        Color32::GOLD
+                    } else {
+                        Color32::DARK_GRAY
+                    }
+                },
             );
 
             // Create galley for sample label
@@ -335,7 +343,14 @@ impl NodeMap {
                     }
                     .to_string(),
                     egui::FontId::proportional(10.0 * self.ui_attributes.scale),
-                    egui::Color32::WHITE,
+                    // Display the label of the node with the specified color
+                    {
+                        if self.currently_selected_node_id == Some(node_id) {
+                            Color32::BLACK
+                        } else {
+                            Color32::WHITE
+                        }
+                    },
                     node_rect.width(),
                 )
             });
@@ -361,7 +376,13 @@ impl NodeMap {
             // If the node was clicked on save it as selected.
             // The user can manage it from anywhere else.
             if node_response.clicked() {
-                self.currently_selected_node_id = Some(node_id);
+                // If the user clicked on the same node again de-select the node
+                if self.currently_selected_node_id == Some(node_id) {
+                    self.currently_selected_node_id = None;
+                } else {
+                    // Select the node if this is the first click on this node.
+                    self.currently_selected_node_id = Some(node_id);
+                }
             }
 
             // Match the nodes type and do something based on that.
@@ -392,6 +413,14 @@ impl NodeMap {
                 let connector_count = node.connectors[idx];
 
                 for connector_idx in 0..connector_count {
+                    // Create the connector_id instance
+                    let current_connector_id = ConnectorID {
+                        node_id,
+                        side: *direction,
+                        connector_idx,
+                        connector_count,
+                    };
+
                     // Fetch the position of the connector and create a rect at the position
                     let connector_pos = calculate_connector_pos(
                         node_rect,
@@ -419,19 +448,16 @@ impl NodeMap {
 
                     // If the connector was clicked set the appropriate variable
                     if connector.clicked() {
-                        // Create the connector_id instance 
-                        let current_connector_id = ConnectorID {
-                            node_id,
-                            side: *direction,
-                            connector_idx,
-                            connector_count,
-                        };
-
-                        // Remove the connector from every connection its mentioned in
-                        self.node_connections.retain(|connection| connection[0] != current_connector_id && connection[1] != current_connector_id);
+                        // Remove the connector from every connection its mentioned in, so that one connector can only have one connection
+                        self.remove_connector_id(current_connector_id);
 
                         // Save the clicked connector
                         clicked_connector = Some(current_connector_id)
+                    }
+
+                    // If the connector was right clicked remove the connector from the list
+                    if connector.secondary_clicked() {
+                        self.remove_connector_id(current_connector_id);
                     }
                 }
             }
@@ -461,6 +487,12 @@ impl NodeMap {
                 }
             }
         }
+    }
+
+    fn remove_connector_id(&mut self, current_connector_id: ConnectorID) {
+        self.node_connections.retain(|connection| {
+            connection[0] != current_connector_id && connection[1] != current_connector_id
+        });
     }
 
     fn display_background(

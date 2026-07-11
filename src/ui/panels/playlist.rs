@@ -6,7 +6,7 @@ use crate::{
         sample::{SampleProperties, generate_sample_waveform},
         utils::find_value_inbetween,
     },
-    plugins::fx_chain::NodeMap,
+    plugins::fx_chain::{NodeMap, NodeType},
     ui::panels::{
         lib::{Panel, PanelStates, display_error_as_toast, random_color_with_opacity},
         media::WorkspaceSampleAttributes,
@@ -559,9 +559,11 @@ fn render_samples(
                     ui.label(RichText::from(&sample.name).weak());
                     ui.separator();
 
+                    let fx_map = master_playback.fx_map();
+
                     let id = 100;
 
-                    let is_fx_enabled = master_playback.fx_map().contains_key(&id);
+                    let is_fx_enabled = fx_map.contains_key(&id);
                     let fx_toggle = ui.toggle_value(
                         &mut is_fx_enabled.clone(),
                         match is_fx_enabled {
@@ -572,14 +574,14 @@ fn render_samples(
 
                     if fx_toggle.clicked() {
                         if !is_fx_enabled {
-                            master_playback.fx_map().insert(id, NodeMap::new());
+                            fx_map.insert(id, NodeMap::new());
                         } else {
-                            master_playback.fx_map().remove(&id);
+                            fx_map.remove(&id);
                         }
                     }
 
                     // This menubutton is deactivated until an effect map is created manually
-                    ui.add_enabled_ui(master_playback.fx_map().contains_key(&id), |ui| {
+                    ui.add_enabled_ui(fx_map.contains_key(&id), |ui| {
                         // Create a menu button which displays the effects
                         ui.menu_button("Effects", |ui| {
                             // Create desired size of the window
@@ -590,17 +592,41 @@ fn render_samples(
 
                             // Allocate the ui so that it cannot automatically grow later.
                             ui.allocate_ui(desired_size, |ui| {
-                                if let Some(mut fx_map) = master_playback.fx_map().get_mut(&id) {
+                                if let Some(mut fx_map) = fx_map.get_mut(&id) {
+                                    let fx_map = fx_map.value_mut();
+
                                     fx_map.display(ui);
+
+                                    ui.separator();
+
+                                    ui.horizontal(|ui| {
+                                        ui.menu_button("Add", |ui| {
+                                            ui.label("Node Type");
+                                            ui.separator();
+                                            ui.button("Builtin");
+                                            ui.button("External");
+                                        });
+                                        
+                                        ui.add_enabled_ui(
+                                            fx_map.currently_selected_node_id.is_some(),
+                                            |ui| {
+                                                if ui.button("Remove").clicked() {
+                                                    // Safe to unwrap due to check above
+                                                    let id =
+                                                        fx_map.currently_selected_node_id.unwrap();
+
+                                                    // Remove node from map if its allowed
+                                                    if fx_map.nodes[id].node_type() != &NodeType::In
+                                                        && fx_map.nodes[id].node_type()
+                                                            != &NodeType::Out
+                                                    {
+                                                        fx_map.nodes.remove(id);
+                                                    }
+                                                }
+                                            },
+                                        );
+                                    });
                                 }
-                            });
-
-                            ui.separator();
-
-                            ui.horizontal(|ui| {
-                                if ui.button("Add").clicked() {}
-
-                                if ui.button("Remove").clicked() {}
                             });
                         });
                     });
