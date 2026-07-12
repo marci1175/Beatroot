@@ -1,6 +1,6 @@
-use std::collections::{HashSet, LinkedList};
+use std::collections::HashSet;
 
-use egui::{Align2, AtomExt, Color32, Pos2, Rect, RichText, Sense, Stroke, Vec2, vec2};
+use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
 use strum::{EnumCount, VariantArray};
 
 #[derive(Debug, Clone, Copy)]
@@ -113,8 +113,6 @@ pub enum NodeType {
 const CONNECTOR_SIZE: f32 = 20.0;
 /// Gap between adjacent connectors.
 const CONNECTOR_GAP: f32 = 10.0;
-/// Spacing between dots in world-space units (before scaling).
-const BACKGROUND_DOT_SPACING: f32 = 15.0;
 
 #[derive(Debug, Clone)]
 pub struct Node {
@@ -398,7 +396,7 @@ impl NodeMap {
                     node_response.on_hover_text("This is the main `Out` node. This is the end point of the samples' pipleline in the effects chain. The information that enters this node gets sent to the mixer.");
                 }
                 NodeType::ExternalPlugin => {}
-                NodeType::InternalCustom(props) => {
+                NodeType::InternalCustom(_props) => {
                     // Create the connectors for a node with any number of connectors
                 }
             };
@@ -464,7 +462,7 @@ impl NodeMap {
 
             // If a connector was clicked try to make a connection
             if let Some(clicked_connector) = clicked_connector {
-                match self.currently_selected_connector.clone() {
+                match self.currently_selected_connector {
                     Some(selected) => {
                         // Check if we are not trying to short circuit the path. (ie connecting a node to intself)
                         if selected.node_id != clicked_connector.node_id {

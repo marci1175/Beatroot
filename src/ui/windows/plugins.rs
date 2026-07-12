@@ -1,11 +1,19 @@
-use egui::{Align2, InnerResponse, RichText, Ui};
+use egui::{Align2, Color32, InnerResponse, Panel, RichText, ScrollArea, Sense, Ui};
+use strum::{Display, VariantArray};
 
 use crate::{app::Application, ui::windows::PluginsState};
+
+#[derive(Display, Debug, Default, Clone, Copy, strum::VariantArray, PartialEq)]
+pub enum PluginTabType {
+    Import,
+    #[default]
+    Loaded,
+}
 
 pub fn display_plugins_window(
     ui: &mut Ui,
     _global_state: &Application,
-    _window_state: &mut PluginsState,
+    window_state: &mut PluginsState,
 ) -> Option<InnerResponse<Option<()>>> {
     let screen_size = ui.ctx().viewport_rect().size();
 
@@ -15,16 +23,49 @@ pub fn display_plugins_window(
         .movable(false)
         .anchor(Align2::CENTER_CENTER, [0., 0.])
         .show(ui.ctx(), |ui| {
-            ui.horizontal(|ui| {
-                ui.label(RichText::from("Available Plugins").strong());
-                if ui.button(RichText::from("Refresh").weak()).clicked() {}
-            });
+            Panel::left("plugin_tab_selector")
+                .resizable(false)
+                .show_inside(ui, |ui| {
+                    // Display all of the types of settings that are available and highlight the current one.
+                    ScrollArea::both()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            for tab in PluginTabType::VARIANTS {
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::from(tab.to_string()).color(Color32::WHITE),
+                                        )
+                                        .fill(
+                                            // If the button is selected
+                                            if &window_state.current_tab == tab {
+                                                Color32::GRAY
+                                            }
+                                            // If its not selected just leave the bg as is
+                                            else {
+                                                Color32::TRANSPARENT
+                                            },
+                                        ),
+                                    )
+                                    .interact(Sense::click())
+                                    .clicked()
+                                {
+                                    window_state.current_tab = *tab;
+                                }
+                            }
+                        });
+                });
 
-            // Separate title from items
-            ui.separator();
-
-            // Display available items in the plugins folder
-            // Plugins are loaded lazily - theyre loaded at startup or when the user requests a refresh of the list.
-            for _plugin in 0..3 {}
+            egui::Frame::NONE
+                .inner_margin(egui::Margin::same(8))
+                .show(ui, |ui| {
+                    ScrollArea::both().auto_shrink([false, false]).show(
+                        ui,
+                        |_ui| match window_state.current_tab {
+                            PluginTabType::Import => {}
+                            PluginTabType::Loaded => {}
+                        },
+                    );
+                });
         })
 }

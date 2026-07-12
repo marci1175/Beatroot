@@ -1,13 +1,27 @@
-use std::path::PathBuf;
+use std::{ffi::CString, path::PathBuf};
 
-use windows::Win32::System::LibraryLoader::LoadLibraryW;
+use windows::{
+    Win32::{
+        Foundation::HMODULE,
+        System::LibraryLoader::{GetProcAddress, LoadLibraryW},
+    },
+    core::PCSTR,
+};
 
 use crate::internals::mem::string_to_pcwstr;
 
-pub fn load_library(path: PathBuf) -> anyhow::Result<()> {
+pub fn load_library(path: &PathBuf) -> anyhow::Result<HMODULE> {
+    // Create a PCWSTR from the string
     let (str, _chars) = string_to_pcwstr(dbg!(&path.to_string_lossy()));
 
-    unsafe { LoadLibraryW(str) }?;
+    // Load the library and retrive a handle to the library.
+    let library_handle = unsafe { LoadLibraryW(str) }?;
 
-    Ok(())
+    // Return the library's handle
+    Ok(library_handle)
+}
+
+pub fn get_fn_addr(module: HMODULE, name: &str) -> Option<unsafe extern "system" fn() -> isize> {
+    let c_name = CString::new(name).ok()?;
+    unsafe { GetProcAddress(module, PCSTR(c_name.as_ptr() as *const u8)) }
 }

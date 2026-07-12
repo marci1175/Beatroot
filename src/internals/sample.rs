@@ -9,20 +9,6 @@ use symphonia::core::{
     units::{Time, Timestamp},
 };
 
-pub struct SampleHandle<'mss> {
-    pub path: PathBuf,
-    pub mss: MediaSourceStream<'mss>,
-}
-
-impl<'mss> SampleHandle<'mss> {
-    pub fn new(path: PathBuf) -> anyhow::Result<Self> {
-        let file = fs::File::open(&path)?;
-        let mss = MediaSourceStream::new(Box::new(file), Default::default());
-
-        Ok(Self { path, mss })
-    }
-}
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct SampleProperties {
     pub sample_rate: u32,

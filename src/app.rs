@@ -9,6 +9,7 @@ use crate::{
         playback::{HostInformation, MasterPlaybackThread},
     },
     internals::utils::ExactLengthBuffer,
+    plugins::PluginManager,
     project_manager::open_project,
     ui::{
         panels::lib::{Panel, PanelStates, create_panels},
@@ -18,7 +19,8 @@ use crate::{
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 pub struct AppRoot {
-    /// This field indicates which floating windows are enabled (visible).
+    /// This field indicates which floating windows are enabled (visible) and the state of the settings window.
+    /// Note that by state I mean the literal state the settings windows are not the actual settings they are modifiying.
     #[serde(skip)]
     pub window_mngr: WindowsManager,
 
@@ -46,7 +48,11 @@ pub struct Application {
     /// This thread is used for playing back individual samples. This is only for simple audio playback.
     pub sample_audio_handler: Arc<AudioThreadHandler>,
 
+    /// The path to the plugins which are loaded at startup, or when the user instructs the application to do so.
+    pub plugin_manager: PluginManager,
+
     #[serde(skip)]
+    /// Audio handler for the playlist. This is where most of the computing power is. This handles effects, mixing, etc. to produce the final result when playing back audio.
     pub master_playback_handler: Arc<MasterPlaybackThread>,
 }
 
@@ -88,6 +94,8 @@ impl Default for Application {
 
             // If no paths were logged then this should be None.
             save_path: None,
+
+            plugin_manager: PluginManager::default(),
 
             // If there was no audio handler added then just handle it with None.
             sample_audio_handler: Arc::new(playback_thread_handler),

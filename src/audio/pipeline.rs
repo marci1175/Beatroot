@@ -127,4 +127,4 @@ fn resample(
     })
 }
 
-fn apply_effects(samples: &mut Vec<SampleBuffer>) {}
+fn apply_effects(_samples: &mut Vec<SampleBuffer>) {}

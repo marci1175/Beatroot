@@ -603,10 +603,10 @@ fn render_samples(
                                         ui.menu_button("Add", |ui| {
                                             ui.label("Node Type");
                                             ui.separator();
-                                            ui.button("Builtin");
-                                            ui.button("External");
+                                            ui.menu_button("Builtin", |_ui| {});
+                                            ui.menu_button("External", |_ui| {});
                                         });
-                                        
+
                                         ui.add_enabled_ui(
                                             fx_map.currently_selected_node_id.is_some(),
                                             |ui| {
@@ -622,6 +622,9 @@ fn render_samples(
                                                     {
                                                         fx_map.nodes.remove(id);
                                                     }
+                                                }
+                                                if ui.button("Open").clicked() {
+                                                    // Open the plugin by creating a window and providing that handle to the plugin's renderer.
                                                 }
                                             },
                                         );
