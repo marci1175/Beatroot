@@ -218,10 +218,10 @@ impl NodeMap {
         // Allocate the respones for the background's zoom so that the map will always be able to resize.
         let bg = ui.allocate_rect(available_rect, Sense::hover());
         if bg.hovered() {
-            let scroll_delta = ui.input(|reader| reader.smooth_scroll_delta()).y;
+            let scroll_delta = ui.input(|reader| reader.smooth_scroll_delta()).y / 1.5;
 
             self.ui_attributes.scale =
-                (self.ui_attributes.scale + scroll_delta * 0.01).clamp(0.1, 5.0);
+                (self.ui_attributes.scale + scroll_delta * 0.01).clamp(0.3, 5.0);
         }
     }
 

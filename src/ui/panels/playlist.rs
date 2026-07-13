@@ -6,7 +6,7 @@ use crate::{
         sample::{SampleProperties, generate_sample_waveform},
         utils::find_value_inbetween,
     },
-    plugins::fx_chain::{NodeMap, NodeType},
+    ui::fx_chain::{NodeMap, NodeType},
     ui::panels::{
         lib::{Panel, PanelStates, display_error_as_toast, random_color_with_opacity},
         media::WorkspaceSampleAttributes,
@@ -561,6 +561,7 @@ fn render_samples(
 
                     let fx_map = master_playback.fx_map();
 
+                    // TODO: FIX
                     let id = 100;
 
                     let is_fx_enabled = fx_map.contains_key(&id);
@@ -595,14 +596,15 @@ fn render_samples(
                                 if let Some(mut fx_map) = fx_map.get_mut(&id) {
                                     let fx_map = fx_map.value_mut();
 
+                                    // Display effects chain map
                                     fx_map.display(ui);
 
                                     ui.separator();
 
                                     ui.horizontal(|ui| {
+                                        if ui.button("Fullscreen").clicked() {}
+
                                         ui.menu_button("Add", |ui| {
-                                            ui.label("Node Type");
-                                            ui.separator();
                                             ui.menu_button("Builtin", |_ui| {});
                                             ui.menu_button("External", |_ui| {});
                                         });

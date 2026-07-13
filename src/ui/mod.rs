@@ -3,3 +3,5 @@ pub mod panels;
 
 /// A list of windows which may be enabled during runtime.
 pub mod windows;
+
+pub mod fx_chain;

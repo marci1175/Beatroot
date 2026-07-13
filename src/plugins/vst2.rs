@@ -1,3 +1,7 @@
+use std::ffi::c_void;
+
+use vst::api::AEffect;
+
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, num_enum::TryFromPrimitive)]
 pub enum AudioMasterOpcode {
@@ -51,4 +55,94 @@ pub enum AudioMasterOpcode {
     EditFile = 47,                   // deprecated
     GetChunkFile = 48,               // deprecated
     GetInputSpeakerArrangement = 49, // deprecated
+}
+
+
+/// Main host callback passed to every plugin.
+pub extern "C" fn host_callback(
+    effect: *mut AEffect,
+    opcode: i32,
+    index: i32,
+    value: isize,
+    ptr: *mut c_void,
+    opt: f32,
+) -> isize {
+    // Check if the opcode is supported.
+    if let Ok(opcode) = AudioMasterOpcode::try_from(opcode) {
+        let return_val = match opcode {
+            AudioMasterOpcode::Automate => {
+                0
+            }
+            AudioMasterOpcode::Version => {
+                2400
+            }
+            AudioMasterOpcode::CurrentId => {
+                0
+            }
+            AudioMasterOpcode::Idle => {}
+            AudioMasterOpcode::PinConnected => {}
+            AudioMasterOpcode::WantMidi => {}
+            AudioMasterOpcode::GetTime => {}
+            AudioMasterOpcode::ProcessEvents => {}
+            AudioMasterOpcode::SetTime => {}
+            AudioMasterOpcode::TempoAt => {}
+            AudioMasterOpcode::GetNumAutomatableParameters => {}
+            AudioMasterOpcode::GetParameterQuantization => {}
+            AudioMasterOpcode::IOChanged => {}
+            AudioMasterOpcode::NeedIdle => {}
+            AudioMasterOpcode::SizeWindow => {}
+            AudioMasterOpcode::GetSampleRate => {}
+            AudioMasterOpcode::GetBlockSize => {}
+            AudioMasterOpcode::GetInputLatency => {}
+            AudioMasterOpcode::GetOutputLatency => {}
+            AudioMasterOpcode::GetPreviousPlug => {}
+            AudioMasterOpcode::GetNextPlug => {}
+            AudioMasterOpcode::WillReplaceOrAccumulate => {}
+            AudioMasterOpcode::GetCurrentProcessLevel => {}
+            AudioMasterOpcode::GetAutomationState => {}
+            AudioMasterOpcode::OfflineStart => {}
+            AudioMasterOpcode::OfflineRead => {}
+            AudioMasterOpcode::OfflineWrite => {}
+            AudioMasterOpcode::OfflineGetCurrentPass => {}
+            AudioMasterOpcode::OfflineGetCurrentMetaPass => {}
+            AudioMasterOpcode::SetOutputSampleRate => {}
+            AudioMasterOpcode::GetOutputSpeakerArrangement => {}
+            AudioMasterOpcode::GetVendorString => {}
+            AudioMasterOpcode::GetProductString => {}
+            AudioMasterOpcode::GetVendorVersion => {}
+            AudioMasterOpcode::VendorSpecific => {}
+            AudioMasterOpcode::SetIcon => {}
+            AudioMasterOpcode::CanDo => {}
+            AudioMasterOpcode::GetLanguage => {
+                // Locale id for English
+                1
+            }
+            AudioMasterOpcode::OpenWindow => {}
+            AudioMasterOpcode::CloseWindow => {}
+            AudioMasterOpcode::GetDirectory => {}
+            AudioMasterOpcode::UpdateDisplay => {}
+            AudioMasterOpcode::BeginEdit => {}
+            AudioMasterOpcode::EndEdit => {}
+            AudioMasterOpcode::OpenFileSelector => {
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    1
+                }
+                else { 
+                    0
+                }
+            }
+            AudioMasterOpcode::CloseFileSelector => {
+                0
+            }
+            AudioMasterOpcode::EditFile => {}
+            AudioMasterOpcode::GetChunkFile => {}
+            AudioMasterOpcode::GetInputSpeakerArrangement => {}
+            _ => (),
+        };
+
+        return_val
+    };
+    else {
+        0
+    }
 }

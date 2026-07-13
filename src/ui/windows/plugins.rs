@@ -5,7 +5,7 @@ use crate::{app::Application, ui::windows::PluginsState};
 
 #[derive(Display, Debug, Default, Clone, Copy, strum::VariantArray, PartialEq)]
 pub enum PluginTabType {
-    Import,
+    Imported,
     #[default]
     Loaded,
 }
@@ -62,7 +62,7 @@ pub fn display_plugins_window(
                     ScrollArea::both().auto_shrink([false, false]).show(
                         ui,
                         |_ui| match window_state.current_tab {
-                            PluginTabType::Import => {}
+                            PluginTabType::Imported => {}
                             PluginTabType::Loaded => {}
                         },
                     );
