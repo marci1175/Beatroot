@@ -47,4 +47,4 @@ macro_rules! create_window_states {
 use crate::ui::windows::plugins::PluginTabType;
 
 // Create windows for different parts of the application
-create_window_states! (pub, Settings (display_settings_window) => { current_tab: settings::SettingsType }, Plugins (display_plugins_window) => { current_tab: PluginTabType }, Help (display_help_window) => {  });
+create_window_states! (pub, Settings (display_settings_window) => { current_tab: settings::SettingsType }, Plugins (display_plugins_window) => { current_tab: PluginTabType, plugin_type: crate::plugins::PluginType }, Help (display_help_window) => {  });

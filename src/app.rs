@@ -120,8 +120,6 @@ impl App for AppRoot {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
 
-    fn update(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {}
-
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Create the main options bar
         egui::Panel::top("application_options").show_inside(ui, |ui| {

@@ -2,9 +2,14 @@ use std::{collections::HashMap, ffi::c_void, path::PathBuf, sync::LazyLock};
 
 use ::vst::api::{AEffect, PluginMain};
 use parking_lot::Mutex;
+use strum::Display;
 
-use crate::{internals::library::{get_fn_addr, load_library}, plugins::vst2::host_callback};
+use crate::{
+    internals::library::{get_fn_addr, load_library},
+    plugins::vst2::host_callback,
+};
 
+pub mod api;
 pub mod vst2;
 
 pub struct HostState {}
@@ -30,9 +35,10 @@ pub struct PluginInformation {
     pub plugin_type: PluginType,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Copy, Clone, serde::Deserialize, serde::Serialize, Default, PartialEq, Display)]
 pub enum PluginType {
     /// Vst2.4 implemented for legacy plugin support.
+    #[default]
     Vst2,
 
     /// Vst 3.x, the latest vst edition.
@@ -50,9 +56,17 @@ pub enum PluginType {
 pub struct PluginHandle {}
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub enum PluginStatus {}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PluginLoader {
     pub path: PathBuf,
     pub plugin_type: PluginType,
+
+    /// This status field gets reinitalized every time a plugin is loaded and an error occurs.
+    /// Since all of the plugins are loaded into memory at startup this field will get updated every startup.
+    #[serde(skip)]
+    pub status: Option<PluginStatus>
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
@@ -83,22 +97,16 @@ impl PluginManager {
                     // Search for the "VSTPluginMain" entrypoint.
                     // This is not the real signature of the function, we have to transmute it.
                     if let Some(function) = get_fn_addr(module_handle, "VSTPluginMain") {
-                        // SAFETY: This function signature is transmuted based on the official SDK of VST 2.x.
+                        // SAFETY: This function signature is transmuted based on the official SDK of VST 2.4.
                         let plugin_entry: PluginMain = unsafe { std::mem::transmute(function) };
 
                         // Call the main plugin entry passing the host callback
                         let plugin_call_res = (plugin_entry)(host_callback);
                     }
-                },
-                PluginType::Vst3 => {
-                    
-                },
-                PluginType::Clap => {
-                    
-                },
-                PluginType::Lua => {
-                    
-                },
+                }
+                PluginType::Vst3 => {}
+                PluginType::Clap => {}
+                PluginType::Lua => {}
             }
         }
 

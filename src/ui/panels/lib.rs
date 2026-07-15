@@ -126,6 +126,7 @@ pub fn create_panels() -> Vec<Panel> {
         Panel::new(
             PanelId::Media,
             ViewportBuilder {
+                monitor: None,
                 title: Some(String::from("Media")),
                 app_id: None,
                 position: None,
@@ -163,6 +164,7 @@ pub fn create_panels() -> Vec<Panel> {
         Panel::new(
             PanelId::Playlist,
             ViewportBuilder {
+                monitor: None,
                 title: Some(String::from("Playlist")),
                 app_id: None,
                 position: None,

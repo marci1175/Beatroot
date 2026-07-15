@@ -1,4 +1,10 @@
-use std::{collections::HashMap, ops::Add, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+    ops::Add,
+    path::PathBuf,
+    sync::Arc,
+};
 
 use crate::{
     audio::playback::MasterPlaybackThread,
@@ -561,8 +567,7 @@ fn render_samples(
 
                     let fx_map = master_playback.fx_map();
 
-                    // TODO: FIX
-                    let id = 100;
+                    let id = (pos, sample_idx);
 
                     let is_fx_enabled = fx_map.contains_key(&id);
                     let fx_toggle = ui.toggle_value(

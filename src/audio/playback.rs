@@ -1,6 +1,6 @@
 use std::{
     num::{NonZero, NonZeroU32},
-    sync::Arc,
+    sync::{Arc, atomic::AtomicU64},
     time::Duration,
 };
 
@@ -14,7 +14,11 @@ use rubato::{
 };
 
 use crate::{
-    audio::pipeline::process_samples, ui::fx_chain::NodeMap, ui::panels::playlist::PlaybackState,
+    audio::pipeline::process_samples,
+    ui::{
+        fx_chain::NodeMap,
+        panels::playlist::{PlaybackState, Position},
+    },
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -174,15 +178,27 @@ impl Source for SampleBuffer {
     }
 }
 
-/// Wrapper around the type NodeMap
-pub type FXMap = Arc<DashMap<usize, NodeMap>>;
+/// Wrapper around the type NodeMap.
+/// Key is the position of the sample and its index in that position (Every key is forced to have a unique key due to how vectors work.), nodemap is the effects chain to the sample.
+pub type FXMap = Arc<DashMap<(Position, usize), NodeMap>>;
+
+/// Time since starting the playback in nanos.
+/// When paused this field stops being updated.
+pub static GLOBAL_PLAYBACK_TIMER: AtomicU64 = AtomicU64::new(0);
 
 /// This represents the main playback manager in the application.
 /// It used for playing back the playlist's samples.
 /// This handles the main workflow of the raw samples.
 pub struct MasterPlaybackThread {
-    playback_state: PlaybackState,
+    /// Main playback state. This controls to entire playback thread.
+    playback_state: Arc<PlaybackState>,
+
+    /// Samples are provided from a set amount of tracks (cpu core count) in pre-determined buffer sizes.
+    /// For example the samples are ingested from every 10 tracks. So we have to ingest those 10 tracks worth of samples before moving on to the 2nd set of 10 and so forth.
+    /// If there are less than 10 tracks available the remainder of worker threads will be idle.
     sample_ingest: flume::Sender<Vec<SampleBuffer>>,
+
+    /// Mixer handle of the host. This is used to append samples to the host's output.
     host_mixer: Mixer,
 
     /// Contains each sample's effects that should be applied to them.
@@ -204,14 +220,14 @@ impl MasterPlaybackThread {
         let host_mixer_clone = host_mixer.clone();
 
         // Create a map of effects which the samples will be applied with.
-        let fx_map: Arc<DashMap<usize, NodeMap>> = Arc::new(DashMap::new());
+        let fx_map: Arc<DashMap<(Position, usize), NodeMap>> = Arc::new(DashMap::new());
         let fx_map_clone = fx_map.clone();
 
         // Create a thread for handling incoming samples
         std::thread::spawn(move || {
-            let _host_mixer = host_mixer_clone.clone();
+            let host_mixer = host_mixer_clone.clone();
             let host_info = host_info;
-            let _effects_map = fx_map_clone.clone();
+            let effects_map = fx_map_clone.clone();
 
             // Create parameters for the resampler
             let params = SincInterpolationParameters {
@@ -223,7 +239,8 @@ impl MasterPlaybackThread {
             };
 
             // Create a buffer here so that it gets reused instead of reallocated every iteration.
-            let mut processed_sample_buffer = Vec::with_capacity(10);
+            let mut processed_sample_buffer =
+                Vec::with_capacity(worker_thread_pool.current_num_threads());
 
             // Resample input - all inputs could vary in length, however the output length doesnt really matter (input is going to be fixed cuz its easier to implement).
             let resamplers: Arc<DashMap<u32, Mutex<Async<f32>>>> = Arc::new(DashMap::new());
@@ -252,14 +269,14 @@ impl MasterPlaybackThread {
         });
 
         Ok(Self {
-            playback_state: PlaybackState::Stopped,
+            playback_state: PlaybackState::Stopped.into(),
             sample_ingest: sender,
             host_mixer,
             fx_map,
         })
     }
 
-    pub fn fx_map(&self) -> Arc<DashMap<usize, NodeMap>> {
+    pub fn fx_map(&self) -> Arc<DashMap<(Position, usize), NodeMap>> {
         self.fx_map.clone()
     }
 }

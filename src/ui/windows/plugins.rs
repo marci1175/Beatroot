@@ -1,18 +1,19 @@
 use egui::{Align2, Color32, InnerResponse, Panel, RichText, ScrollArea, Sense, Ui};
+use egui_extras::{Column, TableBuilder};
 use strum::{Display, VariantArray};
 
-use crate::{app::Application, ui::windows::PluginsState};
+use crate::{app::Application, plugins::PluginLoader, ui::windows::PluginsState};
 
 #[derive(Display, Debug, Default, Clone, Copy, strum::VariantArray, PartialEq)]
 pub enum PluginTabType {
-    Imported,
+    Import,
     #[default]
     Loaded,
 }
 
 pub fn display_plugins_window(
     ui: &mut Ui,
-    _global_state: &Application,
+    global_state: &mut Application,
     window_state: &mut PluginsState,
 ) -> Option<InnerResponse<Option<()>>> {
     let screen_size = ui.ctx().viewport_rect().size();
@@ -59,13 +60,117 @@ pub fn display_plugins_window(
             egui::Frame::NONE
                 .inner_margin(egui::Margin::same(8))
                 .show(ui, |ui| {
-                    ScrollArea::both().auto_shrink([false, false]).show(
-                        ui,
-                        |_ui| match window_state.current_tab {
-                            PluginTabType::Imported => {}
-                            PluginTabType::Loaded => {}
-                        },
-                    );
+                    match window_state.current_tab {
+                        PluginTabType::Import => {
+                            ui.label("Import Plugin");
+
+                            ui.horizontal(|ui| {
+                                // Create the import button
+                                if ui.button("Import").clicked() {
+                                    // Create file dialog for supported extensions
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .add_filter(
+                                            "Plugin",
+                                            &[match window_state.plugin_type {
+                                                crate::plugins::PluginType::Vst2 => "dll",
+                                                crate::plugins::PluginType::Vst3 => "vst3",
+                                                crate::plugins::PluginType::Clap => "clap",
+                                                crate::plugins::PluginType::Lua => "lua",
+                                            }],
+                                        )
+                                        .pick_file()
+                                    {
+                                        global_state.plugin_manager.plugin_loaders.push(
+                                            PluginLoader {
+                                                path,
+                                                plugin_type: window_state.plugin_type,
+                                                status: None,
+                                            },
+                                        );
+                                    }
+                                }
+
+                                egui::ComboBox::from_label("Plugin Type")
+                                    .selected_text(window_state.plugin_type.to_string())
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(
+                                            &mut window_state.plugin_type,
+                                            crate::plugins::PluginType::Vst2,
+                                            "Vst2",
+                                        );
+                                        ui.selectable_value(
+                                            &mut window_state.plugin_type,
+                                            crate::plugins::PluginType::Vst3,
+                                            "Vst3",
+                                        );
+                                        ui.selectable_value(
+                                            &mut window_state.plugin_type,
+                                            crate::plugins::PluginType::Clap,
+                                            "Clap",
+                                        );
+                                        ui.selectable_value(
+                                            &mut window_state.plugin_type,
+                                            crate::plugins::PluginType::Lua,
+                                            "Lua",
+                                        );
+                                    });
+                            });
+                        }
+                        PluginTabType::Loaded => {
+                            egui::ScrollArea::horizontal()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    // Display all the imported plugins in a grid
+                                    TableBuilder::new(ui)
+                                        .striped(true)
+                                        .column(Column::auto().resizable(true))
+                                        .column(Column::auto().resizable(true))
+                                        .column(Column::remainder())
+                                        .column(Column::remainder())
+                                        .header(24.0, |mut header| {
+                                            header.col(|ui| {
+                                                ui.label("Name");
+                                            });
+                                            header.col(|ui| {
+                                                ui.label("Type");
+                                            });
+                                            header.col(|ui| {
+                                                ui.label("Path");
+                                            });
+                                            header.col(|ui| {
+                                                ui.label("Status");
+                                            });
+                                        })
+                                        .body(|body| {
+                                            body.rows(
+                                                20.,
+                                                global_state.plugin_manager.plugin_loaders.len(),
+                                                |mut row| {
+                                                    let plugin = &global_state
+                                                        .plugin_manager
+                                                        .plugin_loaders[row.index()];
+
+                                                    row.col(|ui| {
+                                                        ui.label(
+                                                            plugin
+                                                                .path
+                                                                .file_name()
+                                                                .unwrap_or_default()
+                                                                .to_string_lossy(),
+                                                        );
+                                                    });
+                                                    row.col(|ui| {
+                                                        ui.label(plugin.plugin_type.to_string());
+                                                    });
+                                                    row.col(|ui| {
+                                                        ui.label(plugin.path.to_string_lossy());
+                                                    });
+                                                },
+                                            );
+                                        });
+                                });
+                        }
+                    }
                 });
         })
 }
