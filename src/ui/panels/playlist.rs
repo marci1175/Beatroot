@@ -1,11 +1,18 @@
 use std::{
-    collections::HashMap, ffi::c_void, hash::{DefaultHasher, Hash, Hasher}, ops::Add, path::PathBuf, sync::Arc,
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    ops::Add,
+    path::PathBuf,
+    sync::Arc,
 };
 
 use crate::{
-    app::Application, audio::playback::MasterPlaybackThread, internals::{
-        sample::{SampleProperties, generate_sample_waveform}, utils::find_value_inbetween, windowing::{create_window, register_class},
-    }, plugins::api::vst2::{AEffectOpcode, ERect}, ui::{
+    audio::playback::MasterPlaybackThread,
+    internals::{
+        sample::{SampleProperties, generate_sample_waveform},
+        utils::find_value_inbetween,
+    },
+    ui::{
         fx_chain::{Node, NodeMap, NodeType},
         panels::{
             lib::{
@@ -19,7 +26,6 @@ use egui::{Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec
 use egui_toast::{Toast, ToastStyle};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
-use vst::api::AEffect;
 
 const TRACK_HEIGHT: f32 = 100.0;
 const MINIMUM_TRACK_HEIGHT: f32 = 10.;
@@ -147,7 +153,7 @@ const BPM_PRESETS: &[f32] = &[
 ];
 
 pub fn playlist_ui(
-    _this: &Panel,
+    this: &Panel,
     ui: &mut Ui,
     (panels_state, master_playback): (Arc<PanelStates>, Arc<MasterPlaybackThread>),
     global_state: GlobalState,
@@ -319,6 +325,7 @@ pub fn playlist_ui(
     // We should render the samples because when we are creating them we are also allocation responses
     // These responses would steal the input from the user if created after checking for input over the entire playlist.
     render_samples(
+        this,
         ui,
         state,
         first_visible_track_idx,
@@ -351,7 +358,7 @@ pub fn playlist_ui(
 
     // Handle the sample if it is dropped into the playlist.
     drop_sample(
-        _this,
+        this,
         ui,
         state,
         panels_state.clone(),
@@ -376,6 +383,7 @@ pub fn playlist_ui(
 }
 
 fn render_samples(
+    this: &Panel,
     ui: &mut Ui,
     state: &RwLock<PlaylistState>,
     before_first_visible_track_idx: usize,
@@ -608,12 +616,12 @@ fn render_samples(
                                     ui.separator();
 
                                     ui.horizontal(|ui| {
-                                        if ui.button("Fullscreen").clicked() {}
+                                        ui.button("Fullscreen").clicked();
 
                                         ui.menu_button("Add", |ui| {
                                             ui.menu_button("Builtin", |_ui| {});
                                             ui.menu_button("External", |ui| {
-                                                for (path, plugin) in &global_state
+                                                for (path, _) in &global_state
                                                     .plugin_manager
                                                     .read()
                                                     .loaded_plugins
@@ -630,7 +638,6 @@ fn render_samples(
                                                         fx_map.nodes.push(Node::new(
                                                             NodeType::ExternalPlugin {
                                                                 path: path.clone(),
-                                                                handle: *plugin,
                                                             },
                                                             Pos2::default(),
                                                             [1, 1, 0],
@@ -640,58 +647,57 @@ fn render_samples(
                                             });
                                         });
 
-                                        ui.add_enabled_ui(
-                                            fx_map.currently_selected_node_id.is_some(),
-                                            |ui| {
+                                        // Only try to display the options if there is a node selected.
+                                        if let Some(id) = fx_map.currently_selected_node_id {
+                                            let node = fx_map.nodes[id].clone();
+                                            
+                                            // Only display the remove button for nodes that can be removed.
+                                            if (node.node_type() != &NodeType::In
+                                                && node.node_type() != &NodeType::Out)
+                                            {
                                                 if ui.button("Remove").clicked() {
-                                                    // Safe to unwrap due to check above
-                                                    let id =
-                                                        fx_map.currently_selected_node_id.unwrap();
-
                                                     // Remove node from map if its allowed
-                                                    if fx_map.nodes[id].node_type() != &NodeType::In
-                                                        && fx_map.nodes[id].node_type()
-                                                            != &NodeType::Out
+                                                    fx_map.nodes.remove(id);
+
+                                                    // Reset selected node id
+                                                    fx_map.currently_selected_node_id = None;
+                                                }
+                                            }
+
+                                            match node.node_type() {
+                                                NodeType::In => {}
+                                                NodeType::Out => {}
+                                                NodeType::ExternalPlugin { path } => {
+                                                    if let Some(handle) = global_state
+                                                        .plugin_manager
+                                                        .read()
+                                                        .loaded_plugins
+                                                        .get(path)
                                                     {
-                                                        fx_map.nodes.remove(id);
+                                                        ui.add_enabled_ui(
+                                                            handle
+                                                                .displayed_window_handle
+                                                                .lock()
+                                                                .is_none(),
+                                                            |ui| {
+                                                                // Open the plugin by creating a window and providing that handle to the plugin's renderer.
+                                                                if ui.button("Open").clicked() {
+                                                                    // Display plugin
+                                                                    display_error_as_toast(
+                                                                        handle.display(),
+                                                                        ToastStyle::default(),
+                                                                        this.toasts.clone(),
+                                                                    );
+                                                                }
+                                                            },
+                                                        );
                                                     }
                                                 }
-
-                                                if ui.button("Open").clicked() {
-                                                    // Open the plugin by creating a window and providing that handle to the plugin's renderer.
-                                                    // Safe to unwrap due to check above
-                                                    let id =
-                                                        fx_map.currently_selected_node_id.unwrap();
-
-                                                    let node = &fx_map.nodes[id];
-
-                                                    match node.node_type() {
-                                                        NodeType::In => todo!(),
-                                                        NodeType::Out => todo!(),
-                                                        NodeType::ExternalPlugin { path, handle } => {
-                                                            let effect = handle.plugin_handle_ptr as *mut AEffect;
-                                                            let dispatcher = unsafe { effect.read().dispatcher };
-
-                                                            let mut rect_ptr: *mut ERect = std::ptr::null_mut();
-                                                            (dispatcher)(effect, AEffectOpcode::EditGetRect as i32, 0, 0, &mut rect_ptr as *mut _ as *mut c_void, 0.0);
-
-                                                            let (width, height) = unsafe {
-                                                                (
-                                                                    (*rect_ptr).right - (*rect_ptr).left,
-                                                                    (*rect_ptr).bottom - (*rect_ptr).top,
-                                                                )
-                                                            };
-
-                                                            let class_name = register_class().unwrap();
-                                                            let hwnd = create_window(class_name, width as i32, height as i32).unwrap();
-
-                                                            (dispatcher)(effect, AEffectOpcode::EditOpen as i32, 0, 0, hwnd.0 as *mut c_void, 0.0);
-                                                        },
-                                                        NodeType::InternalCustom(plugin_node_properties) => todo!(),
-                                                    }
-                                                }
-                                            },
-                                        );
+                                                NodeType::InternalCustom(
+                                                    _plugin_node_properties,
+                                                ) => {}
+                                            }
+                                        }
                                     });
                                 }
                             });

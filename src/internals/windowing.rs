@@ -1,8 +1,5 @@
 use windows::{
-    Win32::{
-        Foundation::*, Graphics::Gdi::*, System::LibraryLoader::GetModuleHandleW,
-        UI::WindowsAndMessaging::*,
-    },
+    Win32::{Foundation::*, System::LibraryLoader::GetModuleHandleW, UI::WindowsAndMessaging::*},
     core::*,
 };
 
@@ -13,6 +10,10 @@ unsafe extern "system" fn wnd_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        WM_CLOSE => {
+            let _ = unsafe { DestroyWindow(hwnd) };
+            LRESULT(0)
+        }
         WM_DESTROY => {
             unsafe { PostQuitMessage(0) };
             LRESULT(0)
@@ -21,9 +22,8 @@ unsafe extern "system" fn wnd_proc(
     }
 }
 
-pub fn register_class() -> Result<PCWSTR> {
+pub fn register_class(class_name: PCWSTR) -> Result<PCWSTR> {
     let instance = unsafe { GetModuleHandleW(None)? };
-    let class_name = w!("VstHostWindow");
 
     let wc = WNDCLASSW {
         lpfnWndProc: Some(wnd_proc),
@@ -42,9 +42,9 @@ pub fn create_window(class_name: PCWSTR, width: i32, height: i32) -> Result<HWND
 
     let hwnd = unsafe {
         CreateWindowExW(
-            WINDOW_EX_STYLE(0),
+            WS_EX_TOPMOST,
             class_name,
-            w!("VST Host"),
+            class_name,
             WS_OVERLAPPEDWINDOW | WS_VISIBLE,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
@@ -64,7 +64,7 @@ pub fn run_message_loop() {
     let mut msg = MSG::default();
     unsafe {
         while GetMessageW(&mut msg, None, 0, 0).into() {
-            TranslateMessage(&msg);
+            let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
     }

@@ -108,7 +108,6 @@ pub enum NodeType {
     /// This node manages the underlying VST plugin's effects on the samples in the effects chain.
     ExternalPlugin {
         path: PathBuf,
-        handle: PluginHandle,
     },
 
     InternalCustom(PluginNodeProperties),
@@ -182,16 +181,26 @@ impl NodeMap {
                     Pos2::new(300., 0.),
                     [1, 0, 0],
                 ),
-                Node::new(
-                    NodeType::InternalCustom(PluginNodeProperties {}),
-                    Pos2::default(),
-                    [1, 4, 10],
-                ),
             ]),
             ui_attributes: UiAttributes::default(),
             currently_selected_node_id: None,
             currently_selected_connector: None,
-            node_connections: HashSet::new(),
+
+            // By default the output and the input should be connected.
+            node_connections: HashSet::from([[
+                ConnectorID {
+                    node_id: 0,
+                    side: Side::Right,
+                    connector_count: 1,
+                    connector_idx: 0,
+                },
+                ConnectorID {
+                    node_id: 1,
+                    side: Side::Left,
+                    connector_count: 1,
+                    connector_idx: 0,
+                },
+            ]]),
         }
     }
 
@@ -262,14 +271,24 @@ impl NodeMap {
         }
     }
 
+    /// This function draws the lines between the nodes for the connections. It does not verify the validness of the connections.
     fn draw_connections(
-        &mut self,
+        &self,
         ui: &mut egui::Ui,
         available_rect: egui::Rect,
         reference_point: Pos2,
     ) {
         // Draw the connections between the nodes
         for [lhs, rhs] in &self.node_connections {
+            if self.nodes.get(lhs.node_id).is_none() || self.nodes.get(rhs.node_id).is_none() {
+                eprintln!(
+                    "Invalid node connection between node index {}->{}",
+                    lhs.node_id, rhs.node_id
+                );
+
+                continue;
+            }
+
             // Get each node where its coming from
             let lhs_node = &self.nodes[lhs.node_id];
             let rhs_node = &self.nodes[rhs.node_id];
@@ -321,8 +340,9 @@ impl NodeMap {
             let node_rect =
                 egui::Rect::from_center_size(center, node.size * self.ui_attributes.scale);
 
-            // Draw the body of the node
-            ui.painter().with_clip_rect(available_rect).rect_filled(
+            // Draw the body and the outline of the node
+            // The outline would only be visible if two nodes overlap.
+            ui.painter().with_clip_rect(available_rect).rect(
                 node_rect,
                 1.,
                 // Fill the rect of the node with the specified color
@@ -333,6 +353,8 @@ impl NodeMap {
                         Color32::DARK_GRAY
                     }
                 },
+                Stroke::new(1.0, Color32::BLACK),
+                egui::StrokeKind::Outside,
             );
 
             // Create galley for sample label

@@ -7,7 +7,6 @@ use strum::{Display, VariantArray};
 
 use crate::{
     app::Application,
-    internals::library::unload_library,
     ui::{panels::lib::display_error_as_toast, windows::PluginsState},
 };
 
@@ -197,13 +196,13 @@ pub fn display_plugins_window(
 
                                                 // Try to free the library and display if any error occured
                                                 display_error_as_toast(
-                                                    unload_library(handle.library_handle),
+                                                    handle.destroy(),
                                                     ToastStyle::default(),
                                                     global_state.toasts.clone(),
                                                 );
 
                                                 // Remove this entry from the loaded plugin's list
-                                                return false;
+                                                false
                                             } else {
                                                 true
                                             }

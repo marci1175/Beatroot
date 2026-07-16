@@ -227,9 +227,9 @@ impl MasterPlaybackThread {
 
         // Create a thread for handling incoming samples
         std::thread::spawn(move || {
-            let host_mixer = host_mixer_clone.clone();
+            let _host_mixer = host_mixer_clone.clone();
             let host_info = host_info;
-            let effects_map = fx_map_clone.clone();
+            let _effects_map = fx_map_clone.clone();
 
             // Create parameters for the resampler
             let params = SincInterpolationParameters {

@@ -9,7 +9,6 @@ use parking_lot::{Mutex, RwLock};
 use strum::IntoDiscriminant;
 
 use crate::{
-    app::Application,
     audio::{lib::AudioThreadHandler, playback::MasterPlaybackThread},
     internals::utils::random_value,
     plugins::PluginManager,

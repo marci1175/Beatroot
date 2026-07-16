@@ -1,19 +1,19 @@
-use crate::plugins::api::vst2::{AudioMasterOpcode, VstFileSelect, VstOpcode, VstTimeInfo};
-use std::ffi::{CString, c_str, c_void};
+use crate::plugins::api::vst2::{AudioMasterOpcode, VstFileSelect, VstOpcode};
+use std::ffi::{c_str, c_void};
 use vst::api::AEffect;
 
 /// Main host callback passed to every plugin.
 pub extern "C" fn host_callback(
     effect: *mut AEffect,
     opcode: i32,
-    index: i32,
-    value: isize,
+    _index: i32,
+    _value: isize,
     ptr: *mut c_void,
-    opt: f32,
+    _opt: f32,
 ) -> isize {
     // Check if the opcode is supported.
     if let Ok(opcode) = AudioMasterOpcode::try_from(opcode) {
-        let return_val = match opcode {
+        match opcode {
             AudioMasterOpcode::Automate => 0,
             AudioMasterOpcode::Version => 2400,
             AudioMasterOpcode::CurrentId => 0,
@@ -204,9 +204,7 @@ pub extern "C" fn host_callback(
             AudioMasterOpcode::EditFile => 0,
             AudioMasterOpcode::GetChunkFile => 0,
             AudioMasterOpcode::GetInputSpeakerArrangement => 0,
-        };
-
-        return_val
+        }
     }
     // If its an unsupported opcode just return 1
     else {

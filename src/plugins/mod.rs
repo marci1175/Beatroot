@@ -1,14 +1,29 @@
-use std::{collections::HashMap, ffi::c_void, path::PathBuf, sync::LazyLock};
+use std::{
+    collections::HashMap,
+    ffi::c_void,
+    path::PathBuf,
+    sync::{Arc, LazyLock},
+};
 
 use ::vst::api::{AEffect, PluginMain};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
 use strum::Display;
-use windows::Win32::Foundation::HMODULE;
+use windows::Win32::{
+    Foundation::{HMODULE, HWND, LPARAM, WPARAM},
+    UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE},
+};
 
 use crate::{
-    internals::library::{get_fn_addr, load_library},
-    plugins::vst2::host_callback,
+    internals::{
+        library::{get_fn_addr, load_library, unload_library},
+        mem::str_to_pcwstr,
+        windowing::{create_window, register_class, run_message_loop},
+    },
+    plugins::{
+        api::vst2::{AEffectOpcode, ERect},
+        vst2::host_callback,
+    },
 };
 
 pub mod api;
@@ -58,7 +73,7 @@ pub enum PluginType {
     Lua,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct PluginHandle {
     /// Pointer to the handler struct of this plugin.
     /// The type of the plugin decides how this pointer is worked with.
@@ -70,6 +85,171 @@ pub struct PluginHandle {
 
     /// Handle to the loaded library in memory.
     pub library_handle: HMODULE,
+
+    /// The window's handle if the plugin is being displayed.
+    /// This is used to prevent opening up multiple windows to the same plugin and when removing the plugin.
+    /// The underlying usize is actual a raw pointer casted to usize so that it can be Sent between threads.
+    /// When handling this usize make sure to cast it to a `HWND(*mut c_void)`.
+    pub displayed_window_handle: Arc<Mutex<Option<usize>>>,
+}
+
+impl PartialEq for PluginHandle {
+    fn eq(&self, other: &Self) -> bool {
+        self.plugin_handle_ptr == other.plugin_handle_ptr
+            && self.plugin_type == other.plugin_type
+            && self.library_handle == other.library_handle
+    }
+}
+
+impl PluginHandle {
+    /// Closes the plugin's window.
+    pub fn destroy(&self) -> anyhow::Result<()> {
+        // Close based on plugin type.
+        match self.plugin_type {
+            PluginType::Vst2 => {
+                let effect = self.plugin_handle_ptr as *mut AEffect;
+                let dispatcher = unsafe { effect.read() }.dispatcher;
+
+                // Destroy window if open
+                if let Some(window_handle) = *self.displayed_window_handle.lock() {
+                    // Recast the usize to a hwnd
+                    let hwnd = HWND(window_handle as *mut c_void);
+
+                    // Close the window of the plugin
+                    unsafe {
+                        PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0))?;
+                    }
+                }
+
+                // Close window in plugin
+                (dispatcher)(
+                    effect,
+                    AEffectOpcode::EditClose as i32,
+                    0,
+                    0,
+                    std::ptr::null_mut(),
+                    0.0,
+                );
+
+                // Close plugin
+                (dispatcher)(
+                    effect,
+                    AEffectOpcode::Close as i32,
+                    0,
+                    0,
+                    std::ptr::null_mut(),
+                    0.0,
+                );
+            }
+            PluginType::Vst3 => {}
+            PluginType::Clap => {}
+            PluginType::Lua => {}
+        }
+
+        // Free library from memory
+        // Make sure we are only doing this if the plugin is safe to deallocate
+        unload_library(self.library_handle)?;
+
+        Ok(())
+    }
+
+    pub fn display(&self) -> anyhow::Result<()> {
+        // Clone the window handle so that it can be modified from the other thread
+        let window_hwnd = self.displayed_window_handle.clone();
+
+        // Match the pulgin type and display appropriately
+        match self.plugin_type {
+            PluginType::Vst2 => {
+                // We cast to usize because a *mut pointer does not implement Send.
+                let plugin_handle_ptr = self.plugin_handle_ptr as usize;
+
+                std::thread::spawn(move || {
+                    let effect = plugin_handle_ptr as *mut AEffect;
+                    let dispatcher = unsafe { effect.read().dispatcher };
+
+                    let mut rect_ptr: *mut ERect = std::ptr::null_mut();
+
+                    // Get size of plugin
+                    (dispatcher)(
+                        effect,
+                        AEffectOpcode::EditGetRect as i32,
+                        0,
+                        0,
+                        &mut rect_ptr as *mut _ as *mut c_void,
+                        0.0,
+                    );
+
+                    // Get Height and Width of window (of plugin)
+                    let (width, height) = unsafe {
+                        (
+                            (*rect_ptr).right - (*rect_ptr).left,
+                            (*rect_ptr).bottom - (*rect_ptr).top,
+                        )
+                    };
+
+                    // VST2 spec guarantees max 24 chars including null terminator
+                    let mut name_buf = [0u8; 24];
+
+                    // Request effect name from plugin
+                    (dispatcher)(
+                        effect,
+                        AEffectOpcode::GetEffectName as i32,
+                        0,
+                        0,
+                        name_buf.as_mut_ptr() as *mut c_void,
+                        0.0,
+                    );
+
+                    // Read effect name
+                    let name = unsafe {
+                        std::ffi::CStr::from_ptr(name_buf.as_ptr() as *const i8).to_string_lossy()
+                    };
+
+                    // Create PCWSTR from effect name string
+                    let (name, _bytes) = str_to_pcwstr(&name);
+
+                    // Create class for window
+                    let class_name = register_class(name).unwrap();
+
+                    // Create window
+                    let hwnd = create_window(class_name, width as i32, height as i32).unwrap();
+
+                    *window_hwnd.lock() = Some(hwnd.0 as usize);
+
+                    // The plugin to paint in the window handle
+                    (dispatcher)(
+                        effect,
+                        AEffectOpcode::EditOpen as i32,
+                        0,
+                        0,
+                        hwnd.0 as *mut c_void,
+                        0.0,
+                    );
+
+                    // Keep the window alive
+                    run_message_loop();
+
+                    // Tell plugin to close
+                    (dispatcher)(
+                        effect,
+                        AEffectOpcode::EditClose as i32,
+                        0,
+                        0,
+                        std::ptr::null_mut(),
+                        0.0,
+                    );
+
+                    // Reset the window's state
+                    *window_hwnd.lock() = None;
+                });
+            }
+            PluginType::Vst3 => {}
+            PluginType::Clap => {}
+            PluginType::Lua => {}
+        }
+
+        Ok(())
+    }
 }
 
 unsafe impl Send for PluginHandle {}
@@ -125,7 +305,7 @@ impl PluginManager {
         self.plugin_loaders.insert(
             path.clone(),
             PluginInformation {
-                plugin_type: plugin_type,
+                plugin_type,
                 status: crate::plugins::PluginStatus::Ok,
             },
         );
@@ -142,7 +322,7 @@ impl PluginManager {
             .expect("Plugin expected to be stored in `PluginManager->plugin_loaders`");
 
         // Try loading in the plugin into memory
-        if let Ok(module_handle) = dbg!(load_library(path)) {
+        if let Ok(module_handle) = load_library(path) {
             match loader.plugin_type {
                 PluginType::Vst2 => {
                     // Fetch the main function of the plugin from which we can set up the plugin.
@@ -164,6 +344,7 @@ impl PluginManager {
                                 plugin_handle_ptr: plugin_callback as *mut _,
                                 plugin_type: loader.plugin_type,
                                 library_handle: module_handle,
+                                displayed_window_handle: Arc::new(Mutex::new(None)),
                             },
                         );
                     } else {

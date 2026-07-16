@@ -6,7 +6,6 @@ use egui_toast::Toasts;
 use parking_lot::{Mutex, RwLock};
 
 use crate::{
-    app,
     audio::{
         lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread},
         playback::{HostInformation, MasterPlaybackThread},
@@ -117,7 +116,7 @@ impl Default for Application {
 
 impl AppRoot {
     pub fn new(cc: &CreationContext) -> Self {
-        let mut app_ctx: AppRoot = if let Some(storage) = cc.storage {
+        let app_ctx: AppRoot = if let Some(storage) = cc.storage {
             eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
         } else {
             Default::default()

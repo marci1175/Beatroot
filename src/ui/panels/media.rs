@@ -8,7 +8,6 @@ use parking_lot::{Mutex, RwLock};
 use rodio::Source;
 
 use crate::{
-    app::Application,
     audio::lib::AudioThreadHandler,
     internals::{
         fs::{FsMap, create_entry_map},
@@ -116,7 +115,7 @@ pub fn mediapicker_ui(
     this: &Panel,
     ui: &mut Ui,
     (panels_state, audio_handler): (Arc<PanelStates>, Arc<AudioThreadHandler>),
-    global_state: GlobalState,
+    _global_state: GlobalState,
 ) {
     let state = &panels_state.media_panel;
 

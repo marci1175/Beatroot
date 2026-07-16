@@ -8,11 +8,11 @@ use windows::{
     core::PCSTR,
 };
 
-use crate::internals::mem::string_to_pcwstr;
+use crate::internals::mem::str_to_pcwstr;
 
 pub fn load_library(path: &PathBuf) -> anyhow::Result<HMODULE> {
     // Create a PCWSTR from the string
-    let (str, _chars) = string_to_pcwstr(dbg!(&path.to_string_lossy()));
+    let (str, _chars) = str_to_pcwstr(&path.to_string_lossy());
 
     // Load the library and retrive a handle to the library.
     let library_handle = unsafe { LoadLibraryW(str) }?;
