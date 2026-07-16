@@ -2,7 +2,7 @@ use std::{ffi::CString, path::PathBuf};
 
 use windows::{
     Win32::{
-        Foundation::HMODULE,
+        Foundation::{FreeLibrary, HMODULE},
         System::LibraryLoader::{GetProcAddress, LoadLibraryW},
     },
     core::PCSTR,
@@ -19,6 +19,10 @@ pub fn load_library(path: &PathBuf) -> anyhow::Result<HMODULE> {
 
     // Return the library's handle
     Ok(library_handle)
+}
+
+pub fn unload_library(handle: HMODULE) -> anyhow::Result<()> {
+    unsafe { Ok(FreeLibrary(handle)?) }
 }
 
 pub fn get_fn_addr(module: HMODULE, name: &str) -> Option<unsafe extern "system" fn() -> isize> {

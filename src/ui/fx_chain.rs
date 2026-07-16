@@ -1,7 +1,9 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, path::PathBuf};
 
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
 use strum::{EnumCount, VariantArray};
+
+use crate::plugins::PluginHandle;
 
 #[derive(Debug, Clone, Copy)]
 /// The attributes of an object in the Ui.
@@ -104,7 +106,10 @@ pub enum NodeType {
 
     /// Plugin node.
     /// This node manages the underlying VST plugin's effects on the samples in the effects chain.
-    ExternalPlugin,
+    ExternalPlugin {
+        path: PathBuf,
+        handle: PluginHandle,
+    },
 
     InternalCustom(PluginNodeProperties),
 }
@@ -333,13 +338,12 @@ impl NodeMap {
             // Create galley for sample label
             let galley = ui.fonts_mut(|f| {
                 f.layout(
-                    match node.node_type {
-                        NodeType::In => "Input",
-                        NodeType::Out => "Output",
-                        NodeType::ExternalPlugin => "Plugin",
-                        NodeType::InternalCustom(_) => "Built-in",
-                    }
-                    .to_string(),
+                    match &node.node_type {
+                        NodeType::In => "Input".to_string(),
+                        NodeType::Out => "Output".to_string(),
+                        NodeType::ExternalPlugin { path, .. } => path.to_string_lossy().to_string(),
+                        NodeType::InternalCustom(_) => "Built-in".to_string(),
+                    },
                     egui::FontId::proportional(10.0 * self.ui_attributes.scale),
                     // Display the label of the node with the specified color
                     {
@@ -395,7 +399,7 @@ impl NodeMap {
                     // Display information if hovered
                     node_response.on_hover_text("This is the main `Out` node. This is the end point of the samples' pipleline in the effects chain. The information that enters this node gets sent to the mixer.");
                 }
-                NodeType::ExternalPlugin => {}
+                NodeType::ExternalPlugin { .. } => {}
                 NodeType::InternalCustom(_props) => {
                     // Create the connectors for a node with any number of connectors
                 }

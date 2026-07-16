@@ -22,7 +22,7 @@ pub extern "C" fn host_callback(
                 unsafe {
                     if !effect.is_null() {
                         let eff = &*effect;
-                        // effEditIdle opcode = 19
+
                         (eff.dispatcher)(
                             effect as *mut AEffect,
                             VstOpcode::EditIdle.as_i32(),
@@ -39,24 +39,26 @@ pub extern "C" fn host_callback(
             AudioMasterOpcode::PinConnected => 0,
             AudioMasterOpcode::WantMidi => 1,
             AudioMasterOpcode::GetTime => {
-                let time_info = VstTimeInfo {
-                    sample_pos: todo!(),
-                    sample_rate: todo!(),
-                    nano_seconds: todo!(),
-                    ppq_pos: todo!(),
-                    tempo: todo!(),
-                    bar_start_pos: todo!(),
-                    cycle_start_pos: todo!(),
-                    cycle_end_pos: todo!(),
-                    time_sig_numerator: todo!(),
-                    time_sig_denominator: todo!(),
-                    smpte_offset: todo!(),
-                    smpte_frame_rate: todo!(),
-                    samples_to_next_clock: todo!(),
-                    flags: todo!(),
-                };
+                // let time_info = VstTimeInfo {
+                //     sample_pos: todo!(),
+                //     sample_rate: todo!(),
+                //     nano_seconds: todo!(),
+                //     ppq_pos: todo!(),
+                //     tempo: todo!(),
+                //     bar_start_pos: todo!(),
+                //     cycle_start_pos: todo!(),
+                //     cycle_end_pos: todo!(),
+                //     time_sig_numerator: todo!(),
+                //     time_sig_denominator: todo!(),
+                //     smpte_offset: todo!(),
+                //     smpte_frame_rate: todo!(),
+                //     samples_to_next_clock: todo!(),
+                //     flags: todo!(),
+                // };
 
-                return &time_info as *const _ as isize;
+                // return &time_info as *const _ as isize;
+
+                0
             }
             AudioMasterOpcode::ProcessEvents => {
                 // asd

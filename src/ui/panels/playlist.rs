@@ -1,27 +1,25 @@
 use std::{
-    collections::HashMap,
-    hash::{DefaultHasher, Hash, Hasher},
-    ops::Add,
-    path::PathBuf,
-    sync::Arc,
+    collections::HashMap, ffi::c_void, hash::{DefaultHasher, Hash, Hasher}, ops::Add, path::PathBuf, sync::Arc,
 };
 
 use crate::{
-    audio::playback::MasterPlaybackThread,
-    internals::{
-        sample::{SampleProperties, generate_sample_waveform},
-        utils::find_value_inbetween,
-    },
-    ui::fx_chain::{NodeMap, NodeType},
-    ui::panels::{
-        lib::{Panel, PanelStates, display_error_as_toast, random_color_with_opacity},
-        media::WorkspaceSampleAttributes,
+    app::Application, audio::playback::MasterPlaybackThread, internals::{
+        sample::{SampleProperties, generate_sample_waveform}, utils::find_value_inbetween, windowing::{create_window, register_class},
+    }, plugins::api::vst2::{AEffectOpcode, ERect}, ui::{
+        fx_chain::{Node, NodeMap, NodeType},
+        panels::{
+            lib::{
+                GlobalState, Panel, PanelStates, display_error_as_toast, random_color_with_opacity,
+            },
+            media::WorkspaceSampleAttributes,
+        },
     },
 };
 use egui::{Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2, vec2};
 use egui_toast::{Toast, ToastStyle};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
+use vst::api::AEffect;
 
 const TRACK_HEIGHT: f32 = 100.0;
 const MINIMUM_TRACK_HEIGHT: f32 = 10.;
@@ -151,9 +149,10 @@ const BPM_PRESETS: &[f32] = &[
 pub fn playlist_ui(
     _this: &Panel,
     ui: &mut Ui,
-    (global_state, master_playback): (Arc<PanelStates>, Arc<MasterPlaybackThread>),
+    (panels_state, master_playback): (Arc<PanelStates>, Arc<MasterPlaybackThread>),
+    global_state: GlobalState,
 ) {
-    let state = &global_state.playlist_panel;
+    let state = &panels_state.playlist_panel;
 
     // Get the default track color
     let preferences = state.read().playlist_preferences;
@@ -330,6 +329,7 @@ pub fn playlist_ui(
         &beat_lines,
         &preferences,
         master_playback,
+        global_state.clone(),
     );
 
     // We are going to have multiple layers of responses each capturing something different
@@ -354,7 +354,7 @@ pub fn playlist_ui(
         _this,
         ui,
         state,
-        global_state.clone(),
+        panels_state.clone(),
         &track_lines,
         &beat_lines,
         first_visible_track_idx,
@@ -386,6 +386,7 @@ fn render_samples(
     beat_lines: &[[Pos2; 2]],
     preferences: &PlaylistPreferences,
     master_playback: Arc<MasterPlaybackThread>,
+    global_state: GlobalState,
 ) {
     // Iterate over the samples and decide which one is in frame.
     let samples = state.read().samples.clone();
@@ -611,7 +612,32 @@ fn render_samples(
 
                                         ui.menu_button("Add", |ui| {
                                             ui.menu_button("Builtin", |_ui| {});
-                                            ui.menu_button("External", |_ui| {});
+                                            ui.menu_button("External", |ui| {
+                                                for (path, plugin) in &global_state
+                                                    .plugin_manager
+                                                    .read()
+                                                    .loaded_plugins
+                                                {
+                                                    if ui
+                                                        .button(
+                                                            path.file_name()
+                                                                .unwrap_or_default()
+                                                                .to_string_lossy(),
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        // Create a node based on the plugin we added.
+                                                        fx_map.nodes.push(Node::new(
+                                                            NodeType::ExternalPlugin {
+                                                                path: path.clone(),
+                                                                handle: *plugin,
+                                                            },
+                                                            Pos2::default(),
+                                                            [1, 1, 0],
+                                                        ));
+                                                    }
+                                                }
+                                            });
                                         });
 
                                         ui.add_enabled_ui(
@@ -630,8 +656,39 @@ fn render_samples(
                                                         fx_map.nodes.remove(id);
                                                     }
                                                 }
+
                                                 if ui.button("Open").clicked() {
                                                     // Open the plugin by creating a window and providing that handle to the plugin's renderer.
+                                                    // Safe to unwrap due to check above
+                                                    let id =
+                                                        fx_map.currently_selected_node_id.unwrap();
+
+                                                    let node = &fx_map.nodes[id];
+
+                                                    match node.node_type() {
+                                                        NodeType::In => todo!(),
+                                                        NodeType::Out => todo!(),
+                                                        NodeType::ExternalPlugin { path, handle } => {
+                                                            let effect = handle.plugin_handle_ptr as *mut AEffect;
+                                                            let dispatcher = unsafe { effect.read().dispatcher };
+
+                                                            let mut rect_ptr: *mut ERect = std::ptr::null_mut();
+                                                            (dispatcher)(effect, AEffectOpcode::EditGetRect as i32, 0, 0, &mut rect_ptr as *mut _ as *mut c_void, 0.0);
+
+                                                            let (width, height) = unsafe {
+                                                                (
+                                                                    (*rect_ptr).right - (*rect_ptr).left,
+                                                                    (*rect_ptr).bottom - (*rect_ptr).top,
+                                                                )
+                                                            };
+
+                                                            let class_name = register_class().unwrap();
+                                                            let hwnd = create_window(class_name, width as i32, height as i32).unwrap();
+
+                                                            (dispatcher)(effect, AEffectOpcode::EditOpen as i32, 0, 0, hwnd.0 as *mut c_void, 0.0);
+                                                        },
+                                                        NodeType::InternalCustom(plugin_node_properties) => todo!(),
+                                                    }
                                                 }
                                             },
                                         );

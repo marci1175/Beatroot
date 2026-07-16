@@ -1,13 +1,21 @@
+use std::path::PathBuf;
+
 use egui::{Align2, Color32, InnerResponse, Panel, RichText, ScrollArea, Sense, Ui};
 use egui_extras::{Column, TableBuilder};
+use egui_toast::ToastStyle;
 use strum::{Display, VariantArray};
 
-use crate::{app::Application, plugins::PluginLoader, ui::windows::PluginsState};
+use crate::{
+    app::Application,
+    internals::library::unload_library,
+    ui::{panels::lib::display_error_as_toast, windows::PluginsState},
+};
 
 #[derive(Display, Debug, Default, Clone, Copy, strum::VariantArray, PartialEq)]
 pub enum PluginTabType {
     Import,
     #[default]
+    Imported,
     Loaded,
 }
 
@@ -17,6 +25,7 @@ pub fn display_plugins_window(
     window_state: &mut PluginsState,
 ) -> Option<InnerResponse<Option<()>>> {
     let screen_size = ui.ctx().viewport_rect().size();
+    let plugin_loaders = global_state.plugin_manager.read().plugin_loaders.clone();
 
     egui::Window::new("Plugins")
         .fixed_size(screen_size / 2.)
@@ -26,7 +35,7 @@ pub fn display_plugins_window(
         .show(ui.ctx(), |ui| {
             Panel::left("plugin_tab_selector")
                 .resizable(false)
-                .show_inside(ui, |ui| {
+                .show(ui, |ui| {
                     // Display all of the types of settings that are available and highlight the current one.
                     ScrollArea::both()
                         .auto_shrink([false, false])
@@ -80,13 +89,10 @@ pub fn display_plugins_window(
                                         )
                                         .pick_file()
                                     {
-                                        global_state.plugin_manager.plugin_loaders.push(
-                                            PluginLoader {
-                                                path,
-                                                plugin_type: window_state.plugin_type,
-                                                status: None,
-                                            },
-                                        );
+                                        global_state
+                                            .plugin_manager
+                                            .write()
+                                            .store_plugin(path, window_state.plugin_type);
                                     }
                                 }
 
@@ -116,7 +122,7 @@ pub fn display_plugins_window(
                                     });
                             });
                         }
-                        PluginTabType::Loaded => {
+                        PluginTabType::Imported => {
                             egui::ScrollArea::horizontal()
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| {
@@ -142,32 +148,73 @@ pub fn display_plugins_window(
                                             });
                                         })
                                         .body(|body| {
-                                            body.rows(
-                                                20.,
-                                                global_state.plugin_manager.plugin_loaders.len(),
-                                                |mut row| {
-                                                    let plugin = &global_state
-                                                        .plugin_manager
-                                                        .plugin_loaders[row.index()];
+                                            body.rows(20., plugin_loaders.len(), |mut row| {
+                                                let (path, plugin) =
+                                                    plugin_loaders.get_index(row.index()).unwrap();
 
-                                                    row.col(|ui| {
-                                                        ui.label(
-                                                            plugin
-                                                                .path
-                                                                .file_name()
-                                                                .unwrap_or_default()
-                                                                .to_string_lossy(),
-                                                        );
-                                                    });
-                                                    row.col(|ui| {
-                                                        ui.label(plugin.plugin_type.to_string());
-                                                    });
-                                                    row.col(|ui| {
-                                                        ui.label(plugin.path.to_string_lossy());
-                                                    });
-                                                },
-                                            );
+                                                row.col(|ui| {
+                                                    ui.label(
+                                                        path.file_name()
+                                                            .unwrap_or_default()
+                                                            .to_string_lossy(),
+                                                    );
+                                                });
+                                                row.col(|ui| {
+                                                    ui.label(plugin.plugin_type.to_string());
+                                                });
+                                                row.col(|ui| {
+                                                    ui.label(path.to_string_lossy());
+                                                });
+                                                row.col(|ui| {
+                                                    ui.label(plugin.status.to_string());
+                                                });
+                                            });
                                         });
+                                });
+                        }
+                        PluginTabType::Loaded => {
+                            egui::ScrollArea::horizontal()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    let plugin_manager = &mut global_state.plugin_manager.write();
+
+                                    // If a plugin was removed this is a Some.
+                                    let mut removed_plugin: Option<PathBuf> = None;
+
+                                    plugin_manager.loaded_plugins.retain(|path, handle| {
+                                        ui.horizontal(|ui| {
+                                            // Show the name of the plugin
+                                            ui.label(
+                                                path.file_name()
+                                                    .unwrap_or_default()
+                                                    .to_string_lossy(),
+                                            );
+
+                                            // Display remove button
+                                            if ui.button("Unload and Remove").clicked() {
+                                                // Do not reload this plugin at startup
+                                                removed_plugin = Some(path.clone());
+
+                                                // Try to free the library and display if any error occured
+                                                display_error_as_toast(
+                                                    unload_library(handle.library_handle),
+                                                    ToastStyle::default(),
+                                                    global_state.toasts.clone(),
+                                                );
+
+                                                // Remove this entry from the loaded plugin's list
+                                                return false;
+                                            } else {
+                                                true
+                                            }
+                                        })
+                                        .inner
+                                    });
+
+                                    // If a plugin has been stored as removed remove it from the application too so that its not reloaded at startup.
+                                    if let Some(path) = removed_plugin {
+                                        plugin_manager.plugin_loaders.swap_remove(&path);
+                                    }
                                 });
                         }
                     }

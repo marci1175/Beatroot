@@ -8,6 +8,7 @@ use parking_lot::{Mutex, RwLock};
 use rodio::Source;
 
 use crate::{
+    app::Application,
     audio::lib::AudioThreadHandler,
     internals::{
         fs::{FsMap, create_entry_map},
@@ -15,7 +16,7 @@ use crate::{
         utils::{CacheState, path_to_number},
     },
     ui::panels::{
-        lib::{Panel, PanelStates, display_error_as_toast, random_color_with_opacity},
+        lib::{GlobalState, Panel, PanelStates, display_error_as_toast, random_color_with_opacity},
         playlist::SampleInstance,
     },
 };
@@ -114,9 +115,10 @@ pub enum MediaSelectorState {
 pub fn mediapicker_ui(
     this: &Panel,
     ui: &mut Ui,
-    (global_state, audio_handler): (Arc<PanelStates>, Arc<AudioThreadHandler>),
+    (panels_state, audio_handler): (Arc<PanelStates>, Arc<AudioThreadHandler>),
+    global_state: GlobalState,
 ) {
-    let state = &global_state.media_panel;
+    let state = &panels_state.media_panel;
 
     let media_selector_state = state.read().media_selector_state;
 

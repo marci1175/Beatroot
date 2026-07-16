@@ -2,8 +2,11 @@ use std::{path::PathBuf, sync::Arc};
 
 use eframe::{App, CreationContext};
 use egui::{Color32, RichText, vec2};
+use egui_toast::Toasts;
+use parking_lot::{Mutex, RwLock};
 
 use crate::{
+    app,
     audio::{
         lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread},
         playback::{HostInformation, MasterPlaybackThread},
@@ -12,7 +15,7 @@ use crate::{
     plugins::PluginManager,
     project_manager::open_project,
     ui::{
-        panels::lib::{Panel, PanelStates, create_panels},
+        panels::lib::{GlobalState, Panel, PanelStates, create_panels},
         windows::WindowsManager,
     },
 };
@@ -49,11 +52,16 @@ pub struct Application {
     pub sample_audio_handler: Arc<AudioThreadHandler>,
 
     /// The path to the plugins which are loaded at startup, or when the user instructs the application to do so.
-    pub plugin_manager: PluginManager,
+    pub plugin_manager: Arc<RwLock<PluginManager>>,
 
     #[serde(skip)]
     /// Audio handler for the playlist. This is where most of the computing power is. This handles effects, mixing, etc. to produce the final result when playing back audio.
     pub master_playback_handler: Arc<MasterPlaybackThread>,
+
+    /// Toasts handle in the main application window.
+    /// These toasts are displayed directly in the root window.
+    #[serde(skip)]
+    pub toasts: Arc<Mutex<Toasts>>,
 }
 
 impl Default for Application {
@@ -95,23 +103,30 @@ impl Default for Application {
             // If no paths were logged then this should be None.
             save_path: None,
 
-            plugin_manager: PluginManager::default(),
+            plugin_manager: Arc::new(RwLock::new(PluginManager::default())),
 
             // If there was no audio handler added then just handle it with None.
             sample_audio_handler: Arc::new(playback_thread_handler),
 
             master_playback_handler: Arc::new(master_playback_handler),
+
+            toasts: Arc::new(Mutex::new(Toasts::new())),
         }
     }
 }
 
 impl AppRoot {
     pub fn new(cc: &CreationContext) -> Self {
-        if let Some(storage) = cc.storage {
+        let mut app_ctx: AppRoot = if let Some(storage) = cc.storage {
             eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
         } else {
             Default::default()
-        }
+        };
+
+        // Initalize plugins at startup
+        app_ctx.application.plugin_manager.write().init();
+
+        app_ctx
     }
 }
 
@@ -122,7 +137,7 @@ impl App for AppRoot {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Create the main options bar
-        egui::Panel::top("application_options").show_inside(ui, |ui| {
+        egui::Panel::top("application_options").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.menu_button("File", |ui| {
                     ui.button("New Project").clicked();
@@ -206,6 +221,9 @@ impl App for AppRoot {
             panel.display(
                 ui,
                 self.application.panel_states.clone(),
+                GlobalState {
+                    plugin_manager: self.application.plugin_manager.clone(),
+                },
                 self.application.sample_audio_handler.clone(),
                 self.application.master_playback_handler.clone(),
             );
@@ -218,5 +236,8 @@ impl App for AppRoot {
 
         // Draw egui windows from window manager
         self.window_mngr.display(ui, &mut self.application);
+
+        // Draw toasts to root window
+        self.application.toasts.lock().show(ui);
     }
 }

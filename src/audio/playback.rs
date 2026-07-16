@@ -1,7 +1,7 @@
 use std::{
     num::{NonZero, NonZeroU32},
     sync::{Arc, atomic::AtomicU64},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use dashmap::DashMap;
@@ -193,6 +193,8 @@ pub struct MasterPlaybackThread {
     /// Main playback state. This controls to entire playback thread.
     playback_state: Arc<PlaybackState>,
 
+    playback_start_ts: Instant,
+
     /// Samples are provided from a set amount of tracks (cpu core count) in pre-determined buffer sizes.
     /// For example the samples are ingested from every 10 tracks. So we have to ingest those 10 tracks worth of samples before moving on to the 2nd set of 10 and so forth.
     /// If there are less than 10 tracks available the remainder of worker threads will be idle.
@@ -273,6 +275,7 @@ impl MasterPlaybackThread {
             sample_ingest: sender,
             host_mixer,
             fx_map,
+            playback_start_ts: Instant::now(),
         })
     }
 

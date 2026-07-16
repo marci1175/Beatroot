@@ -9,8 +9,10 @@ use parking_lot::{Mutex, RwLock};
 use strum::IntoDiscriminant;
 
 use crate::{
+    app::Application,
     audio::{lib::AudioThreadHandler, playback::MasterPlaybackThread},
     internals::utils::random_value,
+    plugins::PluginManager,
     ui::panels::{
         media::{MediaPanel, mediapicker_ui},
         playlist::{PlaylistState, playlist_ui},
@@ -21,6 +23,11 @@ use crate::{
 pub struct PanelStates {
     pub media_panel: RwLock<MediaPanel>,
     pub playlist_panel: RwLock<PlaylistState>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GlobalState {
+    pub plugin_manager: Arc<RwLock<PluginManager>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, strum::EnumDiscriminants)]
@@ -79,7 +86,8 @@ impl Panel {
     pub fn display(
         &self,
         ui: &mut Ui,
-        global_state: Arc<PanelStates>,
+        panels_state: Arc<PanelStates>,
+        global_state: GlobalState,
         media_audio_handler: Arc<AudioThreadHandler>,
         master_playback_thread: Arc<MasterPlaybackThread>,
     ) {
@@ -88,14 +96,16 @@ impl Panel {
             PanelId::Media => display_panel(
                 self,
                 ui,
-                (global_state.clone(), media_audio_handler),
+                (panels_state.clone(), media_audio_handler),
+                global_state,
                 "Media Picker",
                 mediapicker_ui,
             ),
             PanelId::Playlist => display_panel(
                 self,
                 ui,
-                (global_state.clone(), master_playback_thread),
+                (panels_state.clone(), master_playback_thread),
+                global_state,
                 "Playlist",
                 playlist_ui,
             ),
@@ -252,12 +262,16 @@ pub fn display_error_as_toast<T, E: ToString>(
 }
 
 /// Display a detachable panel in a pre-determined position.
-pub fn display_panel<GLOBALSTATE: Send + Sync + 'static + Clone>(
+pub fn display_panel<
+    STATE: Send + Sync + 'static + Clone,
+    GLOBALSTATE: Send + Sync + 'static + Clone,
+>(
     this: &Panel,
     ui: &mut Ui,
+    state: STATE,
     global_state: GLOBALSTATE,
     title: &'static str,
-    display_ui: impl FnOnce(&Panel, &mut Ui, GLOBALSTATE)
+    display_ui: impl FnOnce(&Panel, &mut Ui, STATE, GLOBALSTATE)
     + std::marker::Send
     + std::marker::Sync
     + 'static
@@ -276,13 +290,14 @@ pub fn display_panel<GLOBALSTATE: Send + Sync + 'static + Clone>(
                 this.viewport_settings.clone(),
                 move |ui, _viewport| {
                     // Clone state here to that we can move it
+                    let state = state.clone();
                     let global_state = global_state.clone();
                     let toasts = this.toasts.clone();
 
-                    CentralPanel::default().show_inside(ui, |ui| {
+                    CentralPanel::default().show(ui, |ui| {
                         // Display the title of the panel
                         display_panel_title(&this, ui, title);
-                        (display_ui)(&this, ui, global_state);
+                        (display_ui)(&this, ui, state, global_state);
 
                         // Display toasts added to child window
                         toasts.lock().show(ui);
@@ -296,48 +311,48 @@ pub fn display_panel<GLOBALSTATE: Send + Sync + 'static + Clone>(
             // Allocate the area in the root ui based on the type
             match this.panel_type {
                 super::lib::PanelType::Central => {
-                    egui::CentralPanel::default_margins().show_inside(ui, |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
                         // Display the title of the panel
                         display_panel_title(this, ui, title);
 
                         // Display ui of the panel
-                        (display_ui)(this, ui, global_state)
+                        (display_ui)(this, ui, state, global_state)
                     })
                 }
                 super::lib::PanelType::Left => {
-                    egui::Panel::left(Id::new(this.id.discriminant())).show_inside(ui, |ui| {
+                    egui::Panel::left(Id::new(this.id.discriminant())).show(ui, |ui| {
                         // Display the title of the panel
                         display_panel_title(this, ui, title);
 
                         // Display ui of the panel
-                        (display_ui)(this, ui, global_state)
+                        (display_ui)(this, ui, state, global_state)
                     })
                 }
                 super::lib::PanelType::Right => {
-                    egui::Panel::right(Id::new(this.id.discriminant())).show_inside(ui, |ui| {
+                    egui::Panel::right(Id::new(this.id.discriminant())).show(ui, |ui| {
                         // Display the title of the panel
                         display_panel_title(this, ui, title);
 
                         // Display ui of the panel
-                        (display_ui)(this, ui, global_state)
+                        (display_ui)(this, ui, state, global_state)
                     })
                 }
                 super::lib::PanelType::Top => {
-                    egui::Panel::top(Id::new(this.id.discriminant())).show_inside(ui, |ui| {
+                    egui::Panel::top(Id::new(this.id.discriminant())).show(ui, |ui| {
                         // Display the title of the panel
                         display_panel_title(this, ui, title);
 
                         // Display ui of the panel
-                        (display_ui)(this, ui, global_state)
+                        (display_ui)(this, ui, state, global_state)
                     })
                 }
                 super::lib::PanelType::Bottom => {
-                    egui::Panel::bottom(Id::new(this.id.discriminant())).show_inside(ui, |ui| {
+                    egui::Panel::bottom(Id::new(this.id.discriminant())).show(ui, |ui| {
                         // Display the title of the panel
                         display_panel_title(this, ui, title);
 
                         // Display ui of the panel
-                        (display_ui)(this, ui, global_state)
+                        (display_ui)(this, ui, state, global_state)
                     })
                 }
             }
