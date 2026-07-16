@@ -27,7 +27,7 @@ impl Default for UiAttributes {
 pub struct NodeMap {
     /// The nodes which are contained by the map.
     /// When referring to a node's id we are referring to its index in this list.
-    pub nodes: Vec<Node>,
+    nodes: Vec<Node>,
 
     /// The attributes of this [`NodeMap`] in the Ui.
     pub ui_attributes: UiAttributes,
@@ -110,6 +110,10 @@ pub enum NodeType {
         path: PathBuf,
     },
 
+    /// Internal plugin node.
+    /// These are gonna be more customizable since these are directly integrated into the application.
+    /// Idea:
+    /// I should make a channel decoupler plugin which separates the channels into N outputs.
     InternalCustom(PluginNodeProperties),
 }
 
@@ -564,6 +568,32 @@ impl NodeMap {
             // Increment y coordinate
             y_coord += spacing;
         }
+    }
+
+    pub fn remove_node(&mut self, id: usize) {
+        // Remove the node from the Nodes list
+        self.nodes.swap_remove(id);
+
+        // Remove every connection which contains this node that was removed.
+        self.node_connections.retain(|[lhs, rhs]| {
+            if lhs.node_id == id || rhs.node_id == id {
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    pub fn nodes(&self) -> &[Node] {
+        &self.nodes
+    }
+
+    pub fn get_node(&self, idx: usize) -> &Node {
+        &self.nodes[idx]
+    }
+
+    pub fn push_node(&mut self, value: Node) {
+        self.nodes.push(value)
     }
 }
 

@@ -635,7 +635,7 @@ fn render_samples(
                                                         .clicked()
                                                     {
                                                         // Create a node based on the plugin we added.
-                                                        fx_map.nodes.push(Node::new(
+                                                        fx_map.push_node(Node::new(
                                                             NodeType::ExternalPlugin {
                                                                 path: path.clone(),
                                                             },
@@ -649,15 +649,15 @@ fn render_samples(
 
                                         // Only try to display the options if there is a node selected.
                                         if let Some(id) = fx_map.currently_selected_node_id {
-                                            let node = fx_map.nodes[id].clone();
-                                            
+                                            let node = fx_map.get_node(id).clone();
+
                                             // Only display the remove button for nodes that can be removed.
-                                            if (node.node_type() != &NodeType::In
-                                                && node.node_type() != &NodeType::Out)
+                                            if node.node_type() != &NodeType::In
+                                                && node.node_type() != &NodeType::Out
                                             {
                                                 if ui.button("Remove").clicked() {
                                                     // Remove node from map if its allowed
-                                                    fx_map.nodes.remove(id);
+                                                    fx_map.remove_node(id);
 
                                                     // Reset selected node id
                                                     fx_map.currently_selected_node_id = None;
