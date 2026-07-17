@@ -656,7 +656,7 @@ fn render_samples(
                                                 && node.node_type() != &NodeType::Out
                                             {
                                                 if ui.button("Remove").clicked() {
-                                                    // Remove node from map if its allowed
+                                                    // Remove the node and its connections from the map
                                                     fx_map.remove_node(id);
 
                                                     // Reset selected node id

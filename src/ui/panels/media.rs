@@ -849,7 +849,7 @@ fn playbackable_sample_preview(
                                     let sample_player = query.value();
 
                                     // If the sample has already been play through dont let it be paused instead just reset the player if its stopped after its finished
-                                    if dbg!(sample_player.player.empty()) {
+                                    if sample_player.player.empty() {
                                         sample_player.player.stop();
                                     } else {
                                         sample_player.player.pause();

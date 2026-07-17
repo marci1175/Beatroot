@@ -157,7 +157,6 @@ impl Node {
     pub fn calculate_size(connectors: [usize; Side::COUNT]) -> Vec2 {
         vec2(
             80.0 + (connectors[2] as f32 * (CONNECTOR_SIZE + 10.0)),
-            //
             25.0 + (connectors[0].max(connectors[1]) as f32 * (CONNECTOR_SIZE + 10.0)),
         )
     }

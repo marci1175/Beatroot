@@ -7,16 +7,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'Beatroot'",
+            "name": "Debug unit tests in library 'beatroot'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=Beatroot"
+                    "--package=beatroot"
                 ],
                 "filter": {
-                    "name": "Beatroot",
+                    "name": "beatroot",
                     "kind": "lib"
                 }
             },
@@ -26,15 +26,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'Beatroot'",
+            "name": "Debug executable 'beatroot'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=Beatroot",
-                    "--package=Beatroot"
+                    "--bin=beatroot",
+                    "--package=beatroot"
                 ],
                 "filter": {
-                    "name": "Beatroot",
+                    "name": "beatroot",
                     "kind": "bin"
                 }
             },
@@ -44,16 +44,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'Beatroot'",
+            "name": "Debug unit tests in executable 'beatroot'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=Beatroot",
-                    "--package=Beatroot"
+                    "--bin=beatroot",
+                    "--package=beatroot"
                 ],
                 "filter": {
-                    "name": "Beatroot",
+                    "name": "beatroot",
                     "kind": "bin"
                 }
             },
