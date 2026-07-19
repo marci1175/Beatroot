@@ -1,7 +1,7 @@
 use std::panic;
 
 use beatroot::{APP_NAME, app::AppRoot, internals::mem::str_to_pcwstr};
-use eframe::NativeOptions;
+use eframe::{NativeOptions, Renderer, wgpu};
 use windows::{
     Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW},
     core::w,

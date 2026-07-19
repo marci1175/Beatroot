@@ -601,3 +601,5 @@ impl From<VstOpcode> for i32 {
         op as i32
     }
 }
+
+pub const VSTNAMEMAXLEN: usize = 32;

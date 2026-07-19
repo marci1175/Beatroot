@@ -187,8 +187,8 @@ impl PluginHandle {
                         )
                     };
 
-                    // VST2 spec guarantees max 24 chars including null terminator
-                    let mut name_buf = [0u8; 24];
+                    // VST2 spec guarantees max 32 chars including null terminator
+                    let mut name_buf = [0u8; api::vst2::VSTNAMEMAXLEN];
 
                     // Request effect name from plugin
                     (dispatcher)(

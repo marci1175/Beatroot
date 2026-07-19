@@ -3,8 +3,6 @@ use std::{collections::HashSet, path::PathBuf};
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
 use strum::{EnumCount, VariantArray};
 
-use crate::plugins::PluginHandle;
-
 #[derive(Debug, Clone, Copy)]
 /// The attributes of an object in the Ui.
 pub struct UiAttributes {
