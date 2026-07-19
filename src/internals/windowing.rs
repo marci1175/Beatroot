@@ -26,6 +26,7 @@ pub fn register_class(class_name: PCWSTR) -> Result<PCWSTR> {
     let instance = unsafe { GetModuleHandleW(None)? };
 
     let wc = WNDCLASSW {
+        style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
         lpfnWndProc: Some(wnd_proc),
         hInstance: instance.into(),
         lpszClassName: class_name,

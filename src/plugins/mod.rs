@@ -163,7 +163,6 @@ impl PluginHandle {
                 // We cast to usize because a *mut pointer does not implement Send.
                 let plugin_handle_ptr = self.plugin_handle_ptr as usize;
 
-                std::thread::spawn(move || {
                     let effect = plugin_handle_ptr as *mut AEffect;
                     let dispatcher = unsafe { effect.read().dispatcher };
 
@@ -226,9 +225,6 @@ impl PluginHandle {
                         0.0,
                     );
 
-                    // Keep the window alive
-                    run_message_loop();
-
                     // Tell plugin to close
                     (dispatcher)(
                         effect,
@@ -241,7 +237,6 @@ impl PluginHandle {
 
                     // Reset the window's state
                     *window_hwnd.lock() = None;
-                });
             }
             PluginType::Vst3 => {}
             PluginType::Clap => {}

@@ -48,7 +48,17 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     }));
 
+    let mut instance_descriptor = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
+    instance_descriptor.backends = wgpu::Backends::PRIMARY;
+
+    let mut wgpu_setup_create_new = eframe::egui_wgpu::WgpuSetupCreateNew::without_display_handle();
+    wgpu_setup_create_new.instance_descriptor = instance_descriptor;
+
     let native_options = NativeOptions {
+        wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
+            wgpu_setup: eframe::egui_wgpu::WgpuSetup::CreateNew(wgpu_setup_create_new),
+            ..Default::default()
+        },
         ..Default::default()
     };
 

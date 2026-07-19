@@ -123,7 +123,7 @@ impl AppRoot {
         };
 
         // Initalize plugins at startup
-        // app_ctx.application.plugin_manager.write().init();
+        app_ctx.application.plugin_manager.write().init();
 
         app_ctx
     }

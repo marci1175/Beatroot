@@ -104,9 +104,7 @@ pub enum NodeType {
 
     /// Plugin node.
     /// This node manages the underlying VST plugin's effects on the samples in the effects chain.
-    ExternalPlugin {
-        path: PathBuf,
-    },
+    ExternalPlugin { path: PathBuf },
 
     /// Internal plugin node.
     /// These are gonna be more customizable since these are directly integrated into the application.
