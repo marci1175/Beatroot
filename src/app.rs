@@ -4,6 +4,9 @@ use eframe::{App, CreationContext};
 use egui::{Color32, RichText, vec2};
 use egui_toast::Toasts;
 use parking_lot::{Mutex, RwLock};
+use windows::Win32::UI::WindowsAndMessaging::{
+    DispatchMessageW, GetMessageW, MSG, TranslateMessage,
+};
 
 use crate::{
     audio::{

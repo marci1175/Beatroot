@@ -12,7 +12,7 @@ egui_extras = "0.35.0"
 rfd = "0.17.2"
 rodio = {version = "0.22.2", features = ["symphonia-all"]}
 serde = { version = "1.0.228", features = ["rc"]}
-parking_lot = { version = "0.12.5", features = ["serde"] }
+parking_lot = { version = "0.12.5", features = ["serde", "deadlock_detection"] }
 symphonia = {version = "0.6.0", features = ["all"]}
 egui-toast = "0.21.0"
 rubato = "3.0.0"

@@ -674,23 +674,22 @@ fn render_samples(
                                                         .loaded_plugins
                                                         .get(path)
                                                     {
-                                                        ui.add_enabled_ui(
-                                                            handle
-                                                                .displayed_window_handle
-                                                                .lock()
-                                                                .is_none(),
-                                                            |ui| {
-                                                                // Open the plugin by creating a window and providing that handle to the plugin's renderer.
-                                                                if ui.button("Open").clicked() {
-                                                                    // Display plugin
-                                                                    display_error_as_toast(
-                                                                        handle.display(),
-                                                                        ToastStyle::default(),
-                                                                        this.toasts.clone(),
-                                                                    );
-                                                                }
-                                                            },
-                                                        );
+                                                        let is_open = handle
+                                                            .displayed_window_handle
+                                                            .lock()
+                                                            .is_none();
+
+                                                        ui.add_enabled_ui(is_open, |ui| {
+                                                            // Open the plugin by creating a window and providing that handle to the plugin's renderer.
+                                                            if ui.button("Open").clicked() {
+                                                                // Display plugin
+                                                                display_error_as_toast(
+                                                                    handle.open(),
+                                                                    ToastStyle::default(),
+                                                                    this.toasts.clone(),
+                                                                );
+                                                            }
+                                                        });
                                                     }
                                                 }
                                                 NodeType::InternalCustom(

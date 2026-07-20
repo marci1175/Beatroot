@@ -1,7 +1,11 @@
+use std::os::raw::c_void;
+
 use windows::{
     Win32::{Foundation::*, System::LibraryLoader::GetModuleHandleW, UI::WindowsAndMessaging::*},
     core::*,
 };
+
+use crate::plugins::PluginWindowState;
 
 unsafe extern "system" fn wnd_proc(
     hwnd: HWND,
@@ -10,11 +14,30 @@ unsafe extern "system" fn wnd_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        WM_NCCREATE => {
+            let cs = unsafe { &*(lparam.0 as *const CREATESTRUCTW) };
+            unsafe { SetWindowLongPtrW(hwnd, GWLP_USERDATA, cs.lpCreateParams as isize) };
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
         WM_CLOSE => {
+            let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut PluginWindowState;
+            if !raw.is_null() {
+                let state: Box<PluginWindowState> = unsafe { Box::from_raw(raw) };
+                
+                // Call the `on_close` callback of the window
+                (state.on_close)();
+            }
             let _ = unsafe { DestroyWindow(hwnd) };
             LRESULT(0)
         }
         WM_DESTROY => {
+            let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut PluginWindowState;
+            if !raw.is_null() {
+                let state: Box<PluginWindowState> = unsafe { Box::from_raw(raw) };
+                
+                // Call the `on_destroy` callback of the window
+                (state.on_destroy)();
+            }
             unsafe { PostQuitMessage(0) };
             LRESULT(0)
         }
@@ -38,7 +61,12 @@ pub fn register_class(class_name: PCWSTR) -> Result<PCWSTR> {
     Ok(class_name)
 }
 
-pub fn create_window(class_name: PCWSTR, width: i32, height: i32) -> Result<HWND> {
+pub fn create_window(
+    class_name: PCWSTR,
+    width: i32,
+    height: i32,
+    window_state: *mut c_void,
+) -> Result<HWND> {
     let instance = unsafe { GetModuleHandleW(None)? };
 
     let hwnd = unsafe {
@@ -54,7 +82,7 @@ pub fn create_window(class_name: PCWSTR, width: i32, height: i32) -> Result<HWND
             None, // no parent — top-level window
             None, // no menu
             Some(instance.into()),
-            None,
+            Some(window_state),
         )?
     };
 

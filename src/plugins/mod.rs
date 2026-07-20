@@ -18,7 +18,7 @@ use crate::{
     internals::{
         library::{get_fn_addr, load_library, unload_library},
         mem::str_to_pcwstr,
-        windowing::{create_window, register_class, run_message_loop},
+        windowing::{create_window, register_class},
     },
     plugins::{
         api::vst2::{AEffectOpcode, ERect},
@@ -101,6 +101,11 @@ impl PartialEq for PluginHandle {
     }
 }
 
+pub struct PluginWindowState {
+    pub on_close: Box<dyn Fn() -> ()>,
+    pub on_destroy: Box<dyn Fn() -> ()>,
+}
+
 impl PluginHandle {
     /// Closes the plugin's window.
     pub fn destroy(&self) -> anyhow::Result<()> {
@@ -153,7 +158,7 @@ impl PluginHandle {
         Ok(())
     }
 
-    pub fn display(&self) -> anyhow::Result<()> {
+    pub fn open(&self) -> anyhow::Result<()> {
         // Clone the window handle so that it can be modified from the other thread
         let window_hwnd = self.displayed_window_handle.clone();
 
@@ -162,81 +167,99 @@ impl PluginHandle {
             PluginType::Vst2 => {
                 // We cast to usize because a *mut pointer does not implement Send.
                 let plugin_handle_ptr = self.plugin_handle_ptr as usize;
+                let effect = plugin_handle_ptr as *mut AEffect;
+                let dispatcher = unsafe { effect.read().dispatcher };
 
-                    let effect = plugin_handle_ptr as *mut AEffect;
-                    let dispatcher = unsafe { effect.read().dispatcher };
+                let mut rect_ptr: *mut ERect = std::ptr::null_mut();
 
-                    let mut rect_ptr: *mut ERect = std::ptr::null_mut();
+                // Get size of plugin
+                (dispatcher)(
+                    effect,
+                    AEffectOpcode::EditGetRect as i32,
+                    0,
+                    0,
+                    &mut rect_ptr as *mut _ as *mut c_void,
+                    0.0,
+                );
 
-                    // Get size of plugin
-                    (dispatcher)(
-                        effect,
-                        AEffectOpcode::EditGetRect as i32,
-                        0,
-                        0,
-                        &mut rect_ptr as *mut _ as *mut c_void,
-                        0.0,
-                    );
+                // Get Height and Width of window (of plugin)
+                let (width, height) = unsafe {
+                    (
+                        (*rect_ptr).right - (*rect_ptr).left,
+                        (*rect_ptr).bottom - (*rect_ptr).top,
+                    )
+                };
 
-                    // Get Height and Width of window (of plugin)
-                    let (width, height) = unsafe {
-                        (
-                            (*rect_ptr).right - (*rect_ptr).left,
-                            (*rect_ptr).bottom - (*rect_ptr).top,
-                        )
-                    };
+                // VST2 spec guarantees max 32 chars including null terminator
+                let mut name_buf = [0u8; api::vst2::VSTNAMEMAXLEN];
 
-                    // VST2 spec guarantees max 32 chars including null terminator
-                    let mut name_buf = [0u8; api::vst2::VSTNAMEMAXLEN];
+                // Request effect name from plugin
+                (dispatcher)(
+                    effect,
+                    AEffectOpcode::GetEffectName as i32,
+                    0,
+                    0,
+                    name_buf.as_mut_ptr() as *mut c_void,
+                    0.0,
+                );
 
-                    // Request effect name from plugin
-                    (dispatcher)(
-                        effect,
-                        AEffectOpcode::GetEffectName as i32,
-                        0,
-                        0,
-                        name_buf.as_mut_ptr() as *mut c_void,
-                        0.0,
-                    );
+                // Read effect name
+                let name = unsafe {
+                    std::ffi::CStr::from_ptr(name_buf.as_ptr() as *const i8).to_string_lossy()
+                };
 
-                    // Read effect name
-                    let name = unsafe {
-                        std::ffi::CStr::from_ptr(name_buf.as_ptr() as *const i8).to_string_lossy()
-                    };
+                // Create PCWSTR from effect name string
+                let (name, _bytes) = str_to_pcwstr(&name);
 
-                    // Create PCWSTR from effect name string
-                    let (name, _bytes) = str_to_pcwstr(&name);
+                // Create class for window
+                let class_name = register_class(name).unwrap();
 
-                    // Create class for window
-                    let class_name = register_class(name).unwrap();
+                // Clone the handle to the window
+                let window_handle_clone = window_hwnd.clone();
 
-                    // Create window
-                    let hwnd = create_window(class_name, width as i32, height as i32).unwrap();
+                // Create a state for the window
+                let window_state = PluginWindowState {
+                    // Register the callback for when the window is destroyed
+                    on_close: Box::new(move || {
+                        // Signal the plugin to close
+                        (dispatcher)(
+                            effect,
+                            AEffectOpcode::EditClose as i32,
+                            0,
+                            0,
+                            std::ptr::null_mut(),
+                            0.0,
+                        );
+                    }),
+                    on_destroy: Box::new(move || {
+                        // Signal that no window is open for this plugin.
+                        *window_handle_clone.lock() = None;
+                    })
+                };
 
-                    *window_hwnd.lock() = Some(hwnd.0 as usize);
+                // Leak the state so that it wont get deallocated
+                let state_ptr = Box::into_raw(Box::new(window_state));
 
-                    // The plugin to paint in the window handle
-                    (dispatcher)(
-                        effect,
-                        AEffectOpcode::EditOpen as i32,
-                        0,
-                        0,
-                        hwnd.0 as *mut c_void,
-                        0.0,
-                    );
+                // Create window
+                let hwnd = create_window(
+                    class_name,
+                    width as i32,
+                    height as i32,
+                    state_ptr as *mut c_void,
+                )
+                .unwrap();
 
-                    // Tell plugin to close
-                    (dispatcher)(
-                        effect,
-                        AEffectOpcode::EditClose as i32,
-                        0,
-                        0,
-                        std::ptr::null_mut(),
-                        0.0,
-                    );
+                *window_hwnd.lock() = Some(hwnd.0 as usize);
 
-                    // Reset the window's state
-                    *window_hwnd.lock() = None;
+                // The plugin to paint in the window handle
+                (dispatcher)(
+                    effect,
+                    AEffectOpcode::EditOpen as i32,
+                    0,
+                    0,
+                    hwnd.0 as *mut c_void,
+                    0.0,
+                );
             }
             PluginType::Vst3 => {}
             PluginType::Clap => {}
@@ -310,6 +333,7 @@ impl PluginManager {
     }
 
     /// Load plugin into memory and store it as loaded.
+    /// This does not display the plugin itself only loads the plugin into memory.
     fn load_plugin(&mut self, path: &PathBuf) {
         let loader = self
             .plugin_loaders
