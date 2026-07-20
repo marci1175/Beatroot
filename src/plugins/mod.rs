@@ -101,9 +101,14 @@ impl PartialEq for PluginHandle {
     }
 }
 
+///
+/// The set of callbacks the windows callback calls when the window has some sort of interaction.
+///
 pub struct PluginWindowState {
-    pub on_close: Box<dyn Fn() -> ()>,
-    pub on_destroy: Box<dyn Fn() -> ()>,
+    /// This callback is called when the window is signaled to close.
+    pub on_close: Box<dyn Fn()>,
+    /// This callback is called when the actual window is destroyed where the plugin was displayed.
+    pub on_destroy: Box<dyn Fn()>,
 }
 
 impl PluginHandle {
@@ -234,7 +239,7 @@ impl PluginHandle {
                     on_destroy: Box::new(move || {
                         // Signal that no window is open for this plugin.
                         *window_handle_clone.lock() = None;
-                    })
+                    }),
                 };
 
                 // Leak the state so that it wont get deallocated

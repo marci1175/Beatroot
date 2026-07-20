@@ -20,10 +20,11 @@ unsafe extern "system" fn wnd_proc(
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
         WM_CLOSE => {
-            let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut PluginWindowState;
-            if !raw.is_null() {
-                let state: Box<PluginWindowState> = unsafe { Box::from_raw(raw) };
-                
+            let user_data =
+                unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut PluginWindowState;
+            if !user_data.is_null() {
+                let state = unsafe { &*user_data };
+
                 // Call the `on_close` callback of the window
                 (state.on_close)();
             }
@@ -31,10 +32,13 @@ unsafe extern "system" fn wnd_proc(
             LRESULT(0)
         }
         WM_DESTROY => {
-            let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut PluginWindowState;
-            if !raw.is_null() {
-                let state: Box<PluginWindowState> = unsafe { Box::from_raw(raw) };
-                
+            let user_data =
+                unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut PluginWindowState;
+            if !user_data.is_null() {
+                // We only reacquire the ownership if the pointer will never be accessed again.
+                // SAFETY: AFTER `WM_DESTROY` THE WINDOW CANNOT BE ACCESSED AGAIN
+                let state = unsafe { Box::from_raw(user_data) };
+
                 // Call the `on_destroy` callback of the window
                 (state.on_destroy)();
             }

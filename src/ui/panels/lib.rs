@@ -9,10 +9,7 @@ use parking_lot::{Mutex, RwLock};
 use strum::IntoDiscriminant;
 
 use crate::{
-    audio::{lib::AudioThreadHandler, playback::MasterPlaybackThread},
-    internals::utils::random_value,
-    plugins::PluginManager,
-    ui::panels::{
+    audio::{lib::AudioThreadHandler, playback::{FXMap, MasterPlaybackThread}}, internals::utils::random_value, plugins::PluginManager, ui::panels::{
         media::{MediaPanel, mediapicker_ui},
         playlist::{PlaylistState, playlist_ui},
     },
@@ -27,6 +24,7 @@ pub struct PanelStates {
 #[derive(Debug, Clone)]
 pub struct GlobalState {
     pub plugin_manager: Arc<RwLock<PluginManager>>,
+    pub fx_map: FXMap,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, strum::EnumDiscriminants)]

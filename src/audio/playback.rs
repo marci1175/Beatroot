@@ -180,7 +180,7 @@ impl Source for SampleBuffer {
 
 /// Wrapper around the type NodeMap.
 /// Key is the position of the sample and its index in that position (Every key is forced to have a unique key due to how vectors work.), nodemap is the effects chain to the sample.
-pub type FXMap = Arc<DashMap<(Position, usize), NodeMap>>;
+pub type FXMap = Arc<DashMap<usize, NodeMap>>;
 
 /// Time since starting the playback in nanos.
 /// When paused this field stops being updated.
@@ -202,17 +202,10 @@ pub struct MasterPlaybackThread {
 
     /// Mixer handle of the host. This is used to append samples to the host's output.
     host_mixer: Mixer,
-
-    /// Contains each sample's effects that should be applied to them.
-    /// They key is the original identifier for that specific node in the playlist.
-    /// When reading the samples from the playlist each sample read from a different node will have a different id.
-    /// This id is generated in the ui and later supplied to this map, if the user wants to apply any effects to that specific node.
-    /// The audio thread will look up the sample's origin id - fetch the effects and their order and run the effects on the samples.
-    fx_map: FXMap,
 }
 
 impl MasterPlaybackThread {
-    pub fn new(host_info: HostInformation, host_mixer: Mixer) -> anyhow::Result<Self> {
+    pub fn new(host_info: HostInformation, host_mixer: Mixer, fx_map: FXMap) -> anyhow::Result<Self> {
         // Create a thread pool with the default settings
         // CPU core count equals thread count.
         let worker_thread_pool = ThreadPoolBuilder::new().build()?;
@@ -222,7 +215,6 @@ impl MasterPlaybackThread {
         let host_mixer_clone = host_mixer.clone();
 
         // Create a map of effects which the samples will be applied with.
-        let fx_map: Arc<DashMap<(Position, usize), NodeMap>> = Arc::new(DashMap::new());
         let fx_map_clone = fx_map.clone();
 
         // Create a thread for handling incoming samples
@@ -274,12 +266,7 @@ impl MasterPlaybackThread {
             playback_state: PlaybackState::Stopped.into(),
             sample_ingest: sender,
             host_mixer,
-            fx_map,
             playback_start_ts: Instant::now(),
         })
-    }
-
-    pub fn fx_map(&self) -> Arc<DashMap<(Position, usize), NodeMap>> {
-        self.fx_map.clone()
     }
 }

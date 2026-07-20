@@ -8,15 +8,12 @@ use parking_lot::{Mutex, RwLock};
 use rodio::Source;
 
 use crate::{
-    audio::lib::AudioThreadHandler,
-    internals::{
+    audio::lib::AudioThreadHandler, internals::{
         fs::{FsMap, create_entry_map},
         sample::{SampleProperties, fetch_sample_properties, generate_sample_waveform},
         utils::{CacheState, path_to_number},
-    },
-    ui::panels::{
-        lib::{GlobalState, Panel, PanelStates, display_error_as_toast, random_color_with_opacity},
-        playlist::SampleInstance,
+    }, ui::panels::{
+        lib::{GlobalState, Panel, PanelStates, display_error_as_toast, random_color_with_opacity}, playlist::{PlaylistState, SampleInstance},
     },
 };
 
@@ -118,7 +115,6 @@ pub fn mediapicker_ui(
     _global_state: GlobalState,
 ) {
     let state = &panels_state.media_panel;
-
     let media_selector_state = state.read().media_selector_state;
 
     picker_type_selector(ui, state, &media_selector_state);
@@ -163,6 +159,7 @@ pub fn mediapicker_ui(
                             path.clone(),
                             workspace_samples,
                             audio_handler.clone(),
+                            &panels_state.playlist_panel,
                         );
                     }
                 }
@@ -211,6 +208,7 @@ pub fn mediapicker_ui(
                                 workspace_samples,
                                 this.toasts.clone(),
                                 audio_handler.clone(),
+                            &panels_state.playlist_panel,
                             );
                         });
                 }
@@ -234,6 +232,7 @@ pub fn mediapicker_ui(
                             path.clone(),
                             workspace_samples,
                             audio_handler.clone(),
+                            &panels_state.playlist_panel,
                         );
                     }
                 }
@@ -546,6 +545,7 @@ fn display_filesystem_map(
     workspace_samples: &IndexMap<PathBuf, WorkspaceSampleAttributes>,
     toasts: Arc<Mutex<Toasts>>,
     audio_handler: Arc<AudioThreadHandler>,
+    playlist_state: &RwLock<PlaylistState>,
 ) {
     for entry in &mut map.objects {
         match entry {
@@ -561,6 +561,7 @@ fn display_filesystem_map(
                     path.clone(),
                     workspace_samples,
                     audio_handler.clone(),
+                    playlist_state,
                 );
             }
             crate::internals::fs::FsObject::Symlink(os_string) => {
@@ -579,6 +580,7 @@ fn display_filesystem_map(
                             workspace_samples,
                             toasts.clone(),
                             audio_handler.clone(),
+                            playlist_state,
                         ),
                         // If we failed to load the directory in we can always retry
                         None => {
@@ -609,6 +611,7 @@ fn draggable_sample(
     path: PathBuf,
     workspace_samples: &IndexMap<PathBuf, WorkspaceSampleAttributes>,
     audio_handler: Arc<AudioThreadHandler>,
+    playlist_state: &RwLock<PlaylistState>,
 ) -> Response {
     ui.horizontal(|ui| {
         let entry = draggable_sample_label(
@@ -618,6 +621,7 @@ fn draggable_sample(
             name.clone(),
             workspace_samples,
             path.clone(),
+            playlist_state,
         );
 
         // Catch both clicks and dragging in the ui
@@ -909,10 +913,12 @@ fn draggable_sample_label(
     name: std::ffi::OsString,
     workspace_samples: &IndexMap<PathBuf, WorkspaceSampleAttributes>,
     path: PathBuf,
+    playlist_state: &RwLock<PlaylistState>,
 ) -> egui::InnerResponse<egui::InnerResponse<egui::Response>> {
     ui.dnd_drag_source(
         Id::new(&*path),
         SampleInstance {
+            id: playlist_state.read().samples.len(),
             name: name.to_string_lossy().to_string(),
             color: {
                 // Try looking up the workspace if we have already imported this sample

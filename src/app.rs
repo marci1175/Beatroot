@@ -1,22 +1,15 @@
 use std::{path::PathBuf, sync::Arc};
 
+use dashmap::DashMap;
 use eframe::{App, CreationContext};
 use egui::{Color32, RichText, vec2};
 use egui_toast::Toasts;
 use parking_lot::{Mutex, RwLock};
-use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, GetMessageW, MSG, TranslateMessage,
-};
 
 use crate::{
     audio::{
-        lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread},
-        playback::{HostInformation, MasterPlaybackThread},
-    },
-    internals::utils::ExactLengthBuffer,
-    plugins::PluginManager,
-    project_manager::open_project,
-    ui::{
+        lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread}, playback::{FXMap, HostInformation, MasterPlaybackThread},
+    }, internals::utils::ExactLengthBuffer, plugins::PluginManager, project_manager::open_project, ui::{
         panels::lib::{GlobalState, Panel, PanelStates, create_panels},
         windows::WindowsManager,
     },
@@ -56,9 +49,16 @@ pub struct Application {
     /// The path to the plugins which are loaded at startup, or when the user instructs the application to do so.
     pub plugin_manager: Arc<RwLock<PluginManager>>,
 
-    #[serde(skip)]
     /// Audio handler for the playlist. This is where most of the computing power is. This handles effects, mixing, etc. to produce the final result when playing back audio.
+    #[serde(skip)]
     pub master_playback_handler: Arc<MasterPlaybackThread>,
+
+    /// Contains each sample's effects that should be applied to them.
+    /// They key is the original identifier for that specific node in the playlist.
+    /// When reading the samples from the playlist each sample read from a different node will have a different id.
+    /// This id is generated in the ui and later supplied to this map, if the user wants to apply any effects to that specific node.
+    /// The audio thread will look up the sample's origin id - fetch the effects and their order and run the effects on the samples.
+    pub fx_map: FXMap,
 
     /// Toasts handle in the main application window.
     /// These toasts are displayed directly in the root window.
@@ -72,6 +72,8 @@ impl Default for Application {
         let host_audio = Arc::new(
             HostAudioPlayback::new().expect("Failed to acquire host audio playback handle."),
         );
+
+        let fx_map = Arc::new(DashMap::new());
 
         // Create audio playback thread, this thread is only for previewing samples and playing back simple samples.
         // This is not the main playlist playbacker.
@@ -89,6 +91,7 @@ impl Default for Application {
                 channel_count: host_cfg.channel_count().get(),
             },
             host_audio.sink.mixer().clone(),
+            fx_map.clone(),
         )
         .expect("Failed to create master playback thread.");
 
@@ -113,6 +116,8 @@ impl Default for Application {
             master_playback_handler: Arc::new(master_playback_handler),
 
             toasts: Arc::new(Mutex::new(Toasts::new())),
+
+            fx_map,
         }
     }
 }
@@ -206,11 +211,9 @@ impl App for AppRoot {
                 if ui.button("Plugins").clicked() {
                     self.window_mngr.plugins = !self.window_mngr.plugins;
                 }
-
                 if ui.button("Settings").clicked() {
                     self.window_mngr.settings = !self.window_mngr.settings;
                 }
-
                 if ui.button("Help").clicked() {
                     self.window_mngr.help = !self.window_mngr.help;
                 }
@@ -224,6 +227,7 @@ impl App for AppRoot {
                 ui,
                 self.application.panel_states.clone(),
                 GlobalState {
+                    fx_map: self.application.fx_map.clone(),
                     plugin_manager: self.application.plugin_manager.clone(),
                 },
                 self.application.sample_audio_handler.clone(),

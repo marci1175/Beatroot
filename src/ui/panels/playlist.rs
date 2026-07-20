@@ -52,6 +52,7 @@ pub struct TrackCustomization {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SampleInstance {
+    pub id: usize,
     pub name: String,
     pub color: Color32,
     pub path: PathBuf,
@@ -568,15 +569,14 @@ fn render_samples(
 
             // Create a context menu for the node
             egui::Popup::menu(&sample_response)
-                .close_behavior(egui::PopupCloseBehavior::IgnoreClicks)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .show(|ui| {
                     // Display sample name
                     ui.label(RichText::from(&sample.name).weak());
                     ui.separator();
 
-                    let fx_map = master_playback.fx_map();
-
-                    let id = (pos, sample_idx);
+                    let fx_map = global_state.fx_map.clone();
+                    let id = sample.id;
 
                     let is_fx_enabled = fx_map.contains_key(&id);
                     let fx_toggle = ui.toggle_value(
@@ -621,10 +621,11 @@ fn render_samples(
                                         ui.menu_button("Add", |ui| {
                                             ui.menu_button("Builtin", |_ui| {});
                                             ui.menu_button("External", |ui| {
-                                                for (path, _) in &global_state
+                                                for path in global_state
                                                     .plugin_manager
                                                     .read()
                                                     .loaded_plugins
+                                                    .keys()
                                                 {
                                                     if ui
                                                         .button(
@@ -647,6 +648,8 @@ fn render_samples(
                                             });
                                         });
 
+                                        ui.separator();
+
                                         // Only try to display the options if there is a node selected.
                                         if let Some(id) = fx_map.currently_selected_node_id {
                                             let node = fx_map.get_node(id).clone();
@@ -654,14 +657,13 @@ fn render_samples(
                                             // Only display the remove button for nodes that can be removed.
                                             if node.node_type() != &NodeType::In
                                                 && node.node_type() != &NodeType::Out
+                                                && ui.button("Remove").clicked()
                                             {
-                                                if ui.button("Remove").clicked() {
-                                                    // Remove the node and its connections from the map
-                                                    fx_map.remove_node(id);
+                                                // Remove the node and its connections from the map
+                                                fx_map.remove_node(id);
 
-                                                    // Reset selected node id
-                                                    fx_map.currently_selected_node_id = None;
-                                                }
+                                                // Reset selected node id
+                                                fx_map.currently_selected_node_id = None;
                                             }
 
                                             match node.node_type() {
@@ -733,7 +735,6 @@ fn drop_sample(
 
             // We have to subtract one from the relative position since the first track's position is out of bounds (its the topmost line of the whole playlist)
             let absolute_track_idx = first_visible_track_idx + relative_track_pos - 1;
-
             let absolute_beat_pos = relative_beat_pos.max(1) - 1 + first_visible_beat;
 
             // If anything gets dropped into the "workspace" aka the playlist then add it to the workspace files
@@ -757,6 +758,7 @@ fn drop_sample(
 
                 // If we do have this sample then insert into playlist accordingly
                 SampleInstance {
+                    id: state.read().samples.len(),
                     name: sample_info.alias.clone(),
                     color: {
                         // If the color of this sample has been modified, the new color should be displayed when reinserted.
@@ -807,6 +809,7 @@ fn drop_sample(
                     );
 
                 SampleInstance {
+                    id: state.read().samples.len(),
                     name: payload.name.clone(),
                     color: random_color,
                     path: payload.path.clone(),

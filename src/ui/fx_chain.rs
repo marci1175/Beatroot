@@ -3,7 +3,7 @@ use std::{collections::HashSet, path::PathBuf};
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
 use strum::{EnumCount, VariantArray};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy)]
 /// The attributes of an object in the Ui.
 pub struct UiAttributes {
     /// How far are we zoomed in. (2.0 => 2x)
@@ -22,6 +22,7 @@ impl Default for UiAttributes {
     }
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct NodeMap {
     /// The nodes which are contained by the map.
     /// When referring to a node's id we are referring to its index in this list.
@@ -58,6 +59,8 @@ pub struct NodeMap {
     PartialOrd,
     Ord,
     // ------------
+    serde::Serialize,
+    serde::Deserialize
 )]
 pub struct ConnectorID {
     pub node_id: usize,
@@ -67,7 +70,7 @@ pub struct ConnectorID {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, strum::EnumCount, strum::VariantArray,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, strum::EnumCount, strum::VariantArray, serde::Serialize, serde::Deserialize
 )]
 pub enum Side {
     Left = 0,
@@ -89,10 +92,10 @@ fn create_connection([a, b]: [ConnectorID; 2]) -> [ConnectorID; 2] {
     if a <= b { [a, b] } else { [b, a] }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PluginNodeProperties {}
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NodeType {
     /// Main sample in.
     /// This is where the (resampled) original samples flow into the map.
@@ -118,7 +121,7 @@ const CONNECTOR_SIZE: f32 = 20.0;
 /// Gap between adjacent connectors.
 const CONNECTOR_GAP: f32 = 10.0;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Node {
     /// The type of this node.
     /// This could be a custom (user made) node - or the default in or out nodes.
@@ -162,6 +165,8 @@ impl Node {
     }
 }
 
+pub enum EffectSequenceNode {}
+
 impl NodeMap {
     /// Constructs an empty nodemap.
     pub fn new() -> Self {
@@ -202,6 +207,11 @@ impl NodeMap {
             ]]),
         }
     }
+
+    ///
+    /// Creates a sequence depending on the order of the plugins connected.
+    ///
+    pub fn create_effect_sequence(&self) {}
 
     /// Displays the nodemap in the ui provided.
     pub fn display(&mut self, ui: &mut egui::Ui) {
@@ -570,13 +580,8 @@ impl NodeMap {
         self.nodes.swap_remove(id);
 
         // Remove every connection which contains this node that was removed.
-        self.node_connections.retain(|[lhs, rhs]| {
-            if lhs.node_id == id || rhs.node_id == id {
-                false
-            } else {
-                true
-            }
-        });
+        self.node_connections
+            .retain(|[lhs, rhs]| !(lhs.node_id == id || rhs.node_id == id));
     }
 
     pub fn nodes(&self) -> &[Node] {
