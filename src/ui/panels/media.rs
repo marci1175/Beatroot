@@ -5,15 +5,17 @@ use egui::{Color32, Id, Response, RichText, ScrollArea, Sense, Ui, UiBuilder, ve
 use egui_toast::{Toast, ToastStyle, Toasts};
 use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
-use rodio::Source;
 
 use crate::{
-    audio::lib::AudioThreadHandler, internals::{
+    audio::lib::AudioThreadHandler,
+    internals::{
         fs::{FsMap, create_entry_map},
         sample::{SampleProperties, fetch_sample_properties, generate_sample_waveform},
         utils::{CacheState, path_to_number},
-    }, ui::panels::{
-        lib::{GlobalState, Panel, PanelStates, display_error_as_toast, random_color_with_opacity}, playlist::{PlaylistState, SampleInstance},
+    },
+    ui::panels::{
+        lib::{GlobalState, Panel, PanelStates, display_error_as_toast, random_color_with_opacity},
+        playlist::{PlaylistState, SampleInstance},
     },
 };
 
@@ -208,7 +210,7 @@ pub fn mediapicker_ui(
                                 workspace_samples,
                                 this.toasts.clone(),
                                 audio_handler.clone(),
-                            &panels_state.playlist_panel,
+                                &panels_state.playlist_panel,
                             );
                         });
                 }

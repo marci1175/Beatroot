@@ -8,8 +8,13 @@ use parking_lot::{Mutex, RwLock};
 
 use crate::{
     audio::{
-        lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread}, playback::{FXMap, HostInformation, MasterPlaybackThread},
-    }, internals::utils::ExactLengthBuffer, plugins::PluginManager, project_manager::open_project, ui::{
+        lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread},
+        playback::{FXMap, HostInformation, MasterPlaybackThread},
+    },
+    internals::utils::ExactLengthBuffer,
+    plugins::PluginManager,
+    project_manager::open_project,
+    ui::{
         panels::lib::{GlobalState, Panel, PanelStates, create_panels},
         windows::WindowsManager,
     },

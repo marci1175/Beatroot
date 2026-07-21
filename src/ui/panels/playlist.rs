@@ -13,7 +13,7 @@ use crate::{
         utils::find_value_inbetween,
     },
     ui::{
-        fx_chain::{Node, NodeMap, NodeType},
+        fx_map::{Node, NodeMap, NodeType},
         panels::{
             lib::{
                 GlobalState, Panel, PanelStates, display_error_as_toast, random_color_with_opacity,

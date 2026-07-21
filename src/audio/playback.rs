@@ -16,7 +16,7 @@ use rubato::{
 use crate::{
     audio::pipeline::process_samples,
     ui::{
-        fx_chain::NodeMap,
+        fx_map::NodeMap,
         panels::playlist::{PlaybackState, Position},
     },
 };
@@ -205,7 +205,11 @@ pub struct MasterPlaybackThread {
 }
 
 impl MasterPlaybackThread {
-    pub fn new(host_info: HostInformation, host_mixer: Mixer, fx_map: FXMap) -> anyhow::Result<Self> {
+    pub fn new(
+        host_info: HostInformation,
+        host_mixer: Mixer,
+        fx_map: FXMap,
+    ) -> anyhow::Result<Self> {
         // Create a thread pool with the default settings
         // CPU core count equals thread count.
         let worker_thread_pool = ThreadPoolBuilder::new().build()?;

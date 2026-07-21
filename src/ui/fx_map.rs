@@ -60,7 +60,7 @@ pub struct NodeMap {
     Ord,
     // ------------
     serde::Serialize,
-    serde::Deserialize
+    serde::Deserialize,
 )]
 pub struct ConnectorID {
     pub node_id: usize,
@@ -70,7 +70,18 @@ pub struct ConnectorID {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, strum::EnumCount, strum::VariantArray, serde::Serialize, serde::Deserialize
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    strum::EnumCount,
+    strum::VariantArray,
+    serde::Serialize,
+    serde::Deserialize,
 )]
 pub enum Side {
     Left = 0,
@@ -500,7 +511,13 @@ impl NodeMap {
                 match self.currently_selected_connector {
                     Some(selected) => {
                         // Check if we are not trying to short circuit the path. (ie connecting a node to intself)
-                        if selected.node_id != clicked_connector.node_id {
+                        if selected.node_id != clicked_connector.node_id &&
+                            // And that we are not connecting to the same side of IO connectors of the nodes (it would create an invalid path)
+                            (selected.side != clicked_connector.side)
+                            // If either one of the connections (or both is connecting to the bottom connector) mark it as valid instead.
+                            // This is because nodes can send information between one another. (This is obviously limited to beatroot's own plugins.)
+                            || selected.side == Side::Bottom
+                        {
                             // Insert only if its correct
                             self.node_connections
                                 .insert(create_connection([selected, clicked_connector]));

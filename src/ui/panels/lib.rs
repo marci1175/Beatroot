@@ -9,7 +9,13 @@ use parking_lot::{Mutex, RwLock};
 use strum::IntoDiscriminant;
 
 use crate::{
-    audio::{lib::AudioThreadHandler, playback::{FXMap, MasterPlaybackThread}}, internals::utils::random_value, plugins::PluginManager, ui::panels::{
+    audio::{
+        lib::AudioThreadHandler,
+        playback::{FXMap, MasterPlaybackThread},
+    },
+    internals::utils::random_value,
+    plugins::PluginManager,
+    ui::panels::{
         media::{MediaPanel, mediapicker_ui},
         playlist::{PlaylistState, playlist_ui},
     },
