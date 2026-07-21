@@ -394,7 +394,7 @@ fn render_samples(
     track_lines: &[[Pos2; 2]],
     beat_lines: &[[Pos2; 2]],
     preferences: &PlaylistPreferences,
-    master_playback: Arc<MasterPlaybackThread>,
+    _master_playback: Arc<MasterPlaybackThread>,
     global_state: GlobalState,
 ) {
     // Iterate over the samples and decide which one is in frame.

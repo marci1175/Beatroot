@@ -15,10 +15,7 @@ use rubato::{
 
 use crate::{
     audio::pipeline::process_samples,
-    ui::{
-        fx_map::NodeMap,
-        panels::playlist::{PlaybackState, Position},
-    },
+    ui::{fx_map::NodeMap, panels::playlist::PlaybackState},
 };
 
 #[derive(Debug, Clone, Copy)]

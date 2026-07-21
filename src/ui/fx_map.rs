@@ -43,30 +43,24 @@ pub struct NodeMap {
     pub currently_selected_connector: Option<ConnectorID>,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    // ------------
-    // These two implemented so that we can always order the ConnectorIDs present in a connection so that connector order doesnt matter.
-    // Do not forget to call `create_connection` every time a connection is inserted into `node_connections`
-    // ------------
-
-    // ------------
-    PartialOrd,
-    Ord,
-    // ------------
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ConnectorID {
     pub node_id: usize,
     pub side: Side,
     pub connector_idx: usize,
     pub connector_count: usize,
+}
+
+impl Ord for ConnectorID {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.side.cmp(&other.side)
+    }
+}
+
+impl PartialOrd for ConnectorID {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 #[derive(
@@ -83,10 +77,16 @@ pub struct ConnectorID {
     serde::Serialize,
     serde::Deserialize,
 )]
+#[repr(usize)]
 pub enum Side {
-    Left = 0,
-    Right = 1,
-    Bottom = 2,
+    /// This side is used for outputting information. This should always come as the first item in a connection.
+    Right = 0b0,
+    /// This side is used for an additional channel to manage information through. Basically for sending information between plugins (/nodes) or providing additional information from a plugin.
+    /// Please note that only beatroot plugins can utilize this connector.
+    Bottom = 0b1,
+    /// Side used or taking input.
+    /// This should always be at the end of the list since the information is moving into that.
+    Left = 0b10,
 }
 
 impl Side {
@@ -96,6 +96,10 @@ impl Side {
             Side::Right => Color32::RED,
             Side::Bottom => Color32::WHITE,
         }
+    }
+
+    pub fn to_index(&self) -> usize {
+        *self as usize
     }
 }
 
@@ -222,7 +226,13 @@ impl NodeMap {
     ///
     /// Creates a sequence depending on the order of the plugins connected.
     ///
-    pub fn create_effect_sequence(&self) {}
+    pub fn create_effect_sequence(&self) {
+        // Iter over the node connections and log the nodes' id.
+        // This is basically an order of node ids which should have their plugin's `process` function called.
+        let _effect_order: Vec<usize> = Vec::new();
+
+        for [_lhs, _rhs] in self.node_connections.iter() {}
+    }
 
     /// Displays the nodemap in the ui provided.
     pub fn display(&mut self, ui: &mut egui::Ui) {
@@ -513,10 +523,11 @@ impl NodeMap {
                         // Check if we are not trying to short circuit the path. (ie connecting a node to intself)
                         if selected.node_id != clicked_connector.node_id &&
                             // And that we are not connecting to the same side of IO connectors of the nodes (it would create an invalid path)
-                            (selected.side != clicked_connector.side)
+                            (selected.side != clicked_connector.side
                             // If either one of the connections (or both is connecting to the bottom connector) mark it as valid instead.
                             // This is because nodes can send information between one another. (This is obviously limited to beatroot's own plugins.)
-                            || selected.side == Side::Bottom
+                            || (selected.side == Side::Bottom)
+                            )
                         {
                             // Insert only if its correct
                             self.node_connections
