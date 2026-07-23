@@ -33,7 +33,7 @@ jobs:
                 mkdir api/version
                 cat > api/version/status.json << EOF
                 {
-                    "version": "${{ needs.read-version.outputs.version }}"
+                    "version": "${{ needs.read-version.outputs.version }}",
                     "commit": "${{ github.sha }}"
                 }
                 EOF
