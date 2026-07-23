@@ -80,13 +80,13 @@ impl PartialOrd for ConnectorID {
 #[repr(usize)]
 pub enum Side {
     /// This side is used for outputting information. This should always come as the first item in a connection.
-    Right = 0b0,
+    Right = 0,
     /// This side is used for an additional channel to manage information through. Basically for sending information between plugins (/nodes) or providing additional information from a plugin.
     /// Please note that only beatroot plugins can utilize this connector.
-    Bottom = 0b1,
+    Bottom = 1,
     /// Side used or taking input.
     /// This should always be at the end of the list since the information is moving into that.
-    Left = 0b10,
+    Left = 2,
 }
 
 impl Side {
@@ -229,9 +229,12 @@ impl NodeMap {
     pub fn create_effect_sequence(&self) {
         // Iter over the node connections and log the nodes' id.
         // This is basically an order of node ids which should have their plugin's `process` function called.
-        let _effect_order: Vec<usize> = Vec::new();
+        let mut effect_order: Vec<usize> = Vec::new();
 
-        for [_lhs, _rhs] in self.node_connections.iter() {}
+        // Iter over the connections between the nodes
+        for [lhs, rhs] in self.node_connections.iter() {
+            
+        }
     }
 
     /// Displays the nodemap in the ui provided.
