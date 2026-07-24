@@ -1,5 +1,9 @@
 use std::{
-    any, collections::HashMap, ffi::c_void, path::PathBuf, sync::{Arc, LazyLock}, time::Duration,
+    any,
+    ffi::c_void,
+    path::PathBuf,
+    sync::{Arc, LazyLock},
+    time::Duration,
 };
 
 use ::vst::api::{AEffect, PluginMain};
@@ -243,7 +247,7 @@ impl PluginHandle {
         let window_info = self.displayed_window_information.clone();
 
         // Load the plugin's state
-        self.load_state(&*state.read());
+        self.load_state(&state.read());
 
         // Match the pulgin type and display appropriately
         match self.plugin_type {
@@ -499,14 +503,18 @@ pub fn create_plugin_state_writer(
                 {
                     // Check if the plugin that inserted in the parameter queue is open, and what information was it provided with.
                     // This way we will know what node opened the window from the plugin window information.
-                    if let Some(Some(window_information)) =
-                        handle.displayed_window_information.try_lock_for(Duration::from_secs(2)).as_deref()
+                    if let Some(Some(window_information)) = handle
+                        .displayed_window_information
+                        .try_lock_for(Duration::from_secs(2))
+                        .as_deref()
                     {
                         // This is the node which was representing the plugin which was modified
-                        let modified_node = fx_map
-                            .get(&window_information.sample_id)
-                            .map(|nodemap| nodemap.nodes().get(window_information.node_id).cloned())
-                            .flatten();
+                        let modified_node =
+                            fx_map
+                                .get(&window_information.sample_id)
+                                .and_then(|nodemap| {
+                                    nodemap.nodes().get(window_information.node_id).cloned()
+                                });
 
                         if let Some(node) = modified_node {
                             // Modify the locally stored state based on the plugin type
@@ -533,7 +541,7 @@ pub fn create_plugin_state_writer(
                                     }
                                 }
                                 crate::ui::fx_map::NodeType::InternalCustom(
-                                    plugin_node_properties,
+                                    _plugin_node_properties,
                                 ) => todo!(),
                             }
                         }

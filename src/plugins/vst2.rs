@@ -1,17 +1,15 @@
 use crate::plugins::api::vst2::{AudioMasterOpcode, VstFileSelect, VstOpcode};
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use parking_lot::Mutex;
 use std::{
-    collections::VecDeque,
     ffi::{c_str, c_void},
-    sync::{Arc, LazyLock},
+    sync::LazyLock,
 };
 use vst::api::AEffect;
 
 /// A queue for the plugin to request save changes in the DAW.
 /// These "requests" contain which plugin requested and what.
 pub static PARAMETER_CHANNEL: LazyLock<(Sender<Parameter>, Receiver<Parameter>)> =
-    LazyLock::new(|| unbounded());
+    LazyLock::new(unbounded);
 
 #[derive(Debug, Clone, Copy)]
 pub struct Parameter {

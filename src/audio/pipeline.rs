@@ -157,7 +157,7 @@ fn apply_effects(
                         // Output and input nodes do not do anything
                         crate::ui::fx_map::NodeType::In | crate::ui::fx_map::NodeType::Out => (),
                         // Apply the effect from the external plugin, apply it appropirately to the effect type.
-                        crate::ui::fx_map::NodeType::ExternalPlugin { path, state } => {
+                        crate::ui::fx_map::NodeType::ExternalPlugin { path, state: _ } => {
                             let active_plugins = &plugin_manager.read().loaded_plugins;
                             let plugin = active_plugins.get_key1(path);
 

@@ -12,7 +12,6 @@ use crate::{
         sample::{SampleProperties, generate_sample_waveform},
         utils::find_value_inbetween,
     },
-    plugins::vst2::{restore_state, save_state},
     ui::{
         fx_map::{Node, NodeMap, NodeType},
         panels::{

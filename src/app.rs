@@ -12,10 +12,7 @@ use crate::{
         playback::{FXMap, HostInformation, MasterPlaybackThread},
     },
     internals::{endpoint::check_for_update, utils::ExactLengthBuffer},
-    plugins::{
-        PluginManager, create_plugin_state_writer,
-        vst2::{set_parameter_in_state},
-    },
+    plugins::{PluginManager, create_plugin_state_writer},
     project_manager::open_project,
     ui::{
         panels::lib::{GlobalState, Panel, PanelStates, create_panels},
@@ -161,7 +158,10 @@ impl AppRoot {
 
         // Spawn the thread responsible for writing the changes made in the plugins to the nodes
         // NOTICE: This should never panic as there is no way currently to recover this.
-        create_plugin_state_writer(app_ctx.application.plugin_manager.clone(), app_ctx.application.fx_map.clone());
+        create_plugin_state_writer(
+            app_ctx.application.plugin_manager.clone(),
+            app_ctx.application.fx_map.clone(),
+        );
 
         app_ctx
     }
