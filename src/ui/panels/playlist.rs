@@ -622,7 +622,7 @@ fn render_samples(
 
                                     ui.horizontal(|ui| {
                                         ui.menu_button("Options", |ui| {
-                                            if ui.button("Fullscreen").clicked() {}
+                                            ui.button("Fullscreen").clicked();
                                             if ui.button("Zoom In").clicked() {
                                                 fx_map.ui_attributes.scale += 0.2;
                                             }

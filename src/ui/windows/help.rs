@@ -1,5 +1,5 @@
-use egui::{InnerResponse, RichText, Ui};
 use crate::{app::Application, ui::windows::HelpState};
+use egui::{InnerResponse, RichText, Ui};
 
 pub fn display_help_window(
     ui: &mut Ui,

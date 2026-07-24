@@ -80,7 +80,7 @@ impl Default for Application {
 
         let fx_map = Arc::new(DashMap::new());
         let plugin_manager = Arc::new(RwLock::new(PluginManager::default()));
-        
+
         // Create audio playback thread, this thread is only for previewing samples and playing back simple samples.
         // This is not the main playlist playbacker.
         let playback_thread_handler = create_playback_thread(host_audio.clone())

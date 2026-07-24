@@ -441,7 +441,7 @@ impl NodeMap {
                     // If the effect chain has an error draw with red.
                     if let Some(Err(_)) = self.latest_effect_chain {
                         Color32::RED
-                    } 
+                    }
                     // Mark that its unparsed right now
                     else if self.latest_effect_chain.is_none() {
                         Color32::GRAY
@@ -742,7 +742,7 @@ impl NodeMap {
         let updated_connections: Vec<[ConnectorID; 2]> = affected_connections
             .map(|[lhs, rhs]| {
                 if lhs.node_id == last_node_id {
-                    return [
+                    [
                         ConnectorID {
                             node_id: id,
                             side: lhs.side,
@@ -750,9 +750,9 @@ impl NodeMap {
                             connector_count: lhs.connector_count,
                         },
                         rhs,
-                    ];
+                    ]
                 } else {
-                    return [
+                    [
                         lhs,
                         ConnectorID {
                             node_id: id,
@@ -760,7 +760,7 @@ impl NodeMap {
                             connector_idx: rhs.connector_idx,
                             connector_count: rhs.connector_count,
                         },
-                    ];
+                    ]
                 }
             })
             .collect();

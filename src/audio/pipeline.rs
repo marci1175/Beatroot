@@ -12,7 +12,11 @@ use rubato::{
 };
 use vst::api::AEffect;
 
-use crate::{audio::playback::{HostInformation, SampleBuffer}, plugins::PluginManager, ui::fx_map::NodeMap};
+use crate::{
+    audio::playback::{HostInformation, SampleBuffer},
+    plugins::PluginManager,
+    ui::fx_map::NodeMap,
+};
 
 pub const RESAMPLER_CHUNK_SIZE: usize = 1024;
 
@@ -25,7 +29,7 @@ pub fn process_samples(
     processed_samples: &mut Vec<SampleBuffer>,
     resamplers: Arc<DashMap<u32, Mutex<Async<f32>>>>,
     effects_map: Arc<DashMap<usize, NodeMap>>,
-    plugin_manager: Arc<RwLock<PluginManager>>
+    plugin_manager: Arc<RwLock<PluginManager>>,
 ) -> anyhow::Result<()> {
     // Clear processed sample buffer
     processed_samples.clear();
@@ -130,7 +134,11 @@ fn resample(
     })
 }
 
-fn apply_effects(samples: &mut Vec<SampleBuffer>, effects_map: Arc<DashMap<usize, NodeMap>>, plugin_manager: Arc<RwLock<PluginManager>>) {
+fn apply_effects(
+    samples: &mut Vec<SampleBuffer>,
+    effects_map: Arc<DashMap<usize, NodeMap>>,
+    plugin_manager: Arc<RwLock<PluginManager>>,
+) {
     // Clone the samples so that we can have a mutable reference into them
     for sample in samples.clone() {
         // Lookup the fx chain for the sample if there is one
@@ -156,13 +164,13 @@ fn apply_effects(samples: &mut Vec<SampleBuffer>, effects_map: Arc<DashMap<usize
                             // Get the plugin from the loaded plugins
                             if let Some(plugin) = plugin {
                                 let raw_aeffect = plugin.plugin_handle_ptr as *mut AEffect;
-                                let aeffect = unsafe { raw_aeffect.read() };
-                                
+                                let _aeffect = unsafe { raw_aeffect.read() };
+
                                 // Apply effects
                                 // (aeffect.processReplacing)(raw_aeffect, );
                             }
-                        },
-                        crate::ui::fx_map::NodeType::InternalCustom(plugin_node_properties) => {},
+                        }
+                        crate::ui::fx_map::NodeType::InternalCustom(_plugin_node_properties) => {}
                     }
                 }
             }
