@@ -77,7 +77,11 @@ pub enum PluginType {
 pub struct PluginHandle {
     /// Pointer to the handler struct of this plugin.
     /// The type of the plugin decides how this pointer is worked with.
+    /// 
     /// SAFETY: Ensure that the memory is not deallocated where this pointer is pointing to.
+    /// 
+    /// PluginType casts:
+    /// - VST2: ```*mut AEffect```
     pub plugin_handle_ptr: *mut usize,
 
     /// The type of the plugin

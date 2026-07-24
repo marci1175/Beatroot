@@ -1,4 +1,7 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{
+    collections::{HashSet, VecDeque},
+    path::PathBuf,
+};
 
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
 use strum::{EnumCount, VariantArray};
@@ -7,10 +10,10 @@ use strum::{EnumCount, VariantArray};
 /// The attributes of an object in the Ui.
 pub struct UiAttributes {
     /// How far are we zoomed in. (2.0 => 2x)
-    scale: f32,
+    pub scale: f32,
 
     /// How much the user has dragged the whole map.
-    offset: Vec2,
+    pub offset: Vec2,
 }
 
 impl Default for UiAttributes {
@@ -28,6 +31,11 @@ pub struct NodeMap {
     /// When referring to a node's id we are referring to its index in this list.
     nodes: Vec<Node>,
 
+    #[serde(skip)]
+    /// This is only used for visual feedback to the user.
+    /// THe actual playback thread requests its own data at media creation time.
+    latest_effect_chain: Option<anyhow::Result<Vec<usize>>>,
+
     /// The attributes of this [`NodeMap`] in the Ui.
     pub ui_attributes: UiAttributes,
 
@@ -40,17 +48,28 @@ pub struct NodeMap {
     /// This is used to edit or remove a node from the map.
     pub currently_selected_node_id: Option<usize>,
 
+    /// The connector the user has currently selected to make a connection from.
     pub currently_selected_connector: Option<ConnectorID>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ConnectorID {
+    /// The id of the node this connection is related to.
     pub node_id: usize,
+
+    /// Indicated the side the connector is located on the node.
     pub side: Side,
+
+    /// The connector's index on the side of the node.
     pub connector_idx: usize,
+
+    /// Total number of connectors on that specific side.
     pub connector_count: usize,
 }
 
+/// This Ord implementation makes it so that the outgoing side of the connection is always before the incoming side.
+/// [id: 0] -> [id: 1] => [0 -> 1]
+/// [id: 1] <- [id: 0] => (still) [0 -> 1]
 impl Ord for ConnectorID {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.side.cmp(&other.side)
@@ -98,7 +117,7 @@ impl Side {
         }
     }
 
-    pub fn to_index(&self) -> usize {
+    pub const fn to_index(&self) -> usize {
         *self as usize
     }
 }
@@ -147,8 +166,8 @@ pub struct Node {
 
     /// Shows the number of connectors on each side of the node.
     /// A connectors size is 20.0 in every direction.
-    /// The amount of sides may change in the future, but for now treat it as 3 (left, right, bottom).
-    /// When creating the array of numbers containing the number of connectors on the nodes sides the directions' order follow as: `left, right, bottom`.
+    /// The amount of sides may change in the future, but for now treat it as 3 (right, bottom, left).
+    /// When creating the array of numbers containing the number of connectors on the nodes sides the directions' order follow as: `right, bottom, left`.
     connectors: [usize; Side::COUNT],
 
     /// The size of this node.
@@ -170,8 +189,10 @@ impl Node {
     /// Calculates the size of the node based on its connectors.
     pub fn calculate_size(connectors: [usize; Side::COUNT]) -> Vec2 {
         vec2(
-            80.0 + (connectors[2] as f32 * (CONNECTOR_SIZE + 10.0)),
-            25.0 + (connectors[0].max(connectors[1]) as f32 * (CONNECTOR_SIZE + 10.0)),
+            80.0 + (connectors[Side::Bottom.to_index()] as f32 * (CONNECTOR_SIZE + 10.0)),
+            25.0 + (connectors[Side::Right.to_index()].max(connectors[Side::Left.to_index()])
+                as f32
+                * (CONNECTOR_SIZE + 10.0)),
         )
     }
 
@@ -187,23 +208,26 @@ impl NodeMap {
     pub fn new() -> Self {
         Self {
             // Create the two default nodes in every effects chain.
+            // NOTICE: Since the position of these two never get modified we can assume their location.
             nodes: Vec::from([
                 Node::new(
                     // Set the type of this node.
                     NodeType::In,
                     Pos2::new(-300.0, 0.),
-                    [0, 1, 0],
+                    [1, 0, 0],
                 ),
                 Node::new(
                     // Set the type of this node.
                     NodeType::Out,
                     Pos2::new(300., 0.),
-                    [1, 0, 0],
+                    [0, 0, 1],
                 ),
             ]),
+
             ui_attributes: UiAttributes::default(),
             currently_selected_node_id: None,
             currently_selected_connector: None,
+            latest_effect_chain: None,
 
             // By default the output and the input should be connected.
             node_connections: HashSet::from([[
@@ -223,18 +247,77 @@ impl NodeMap {
         }
     }
 
+    pub fn reset(&mut self) {
+        *self = NodeMap::new();
+    }
+
     ///
     /// Creates a sequence depending on the order of the plugins connected.
+    /// If the sequence is invalid this function returns an error.
     ///
-    pub fn create_effect_sequence(&self) {
-        // Iter over the node connections and log the nodes' id.
-        // This is basically an order of node ids which should have their plugin's `process` function called.
-        let mut effect_order: Vec<usize> = Vec::new();
+    pub fn create_effect_sequence(&self) -> anyhow::Result<Vec<usize>> {
+        let node_count = self.nodes.len();
 
-        // Iter over the connections between the nodes
+        let mut children: Vec<Vec<usize>> = vec![Vec::new(); node_count];
+
         for [lhs, rhs] in self.node_connections.iter() {
-            
+            children[lhs.node_id].push(rhs.node_id);
         }
+
+        // Only nodes actually reachable from `In` (node 0) count as part of the
+        // live chain — anything else is a stray/unwired node sitting in the map.
+        let mut reachable = vec![false; node_count];
+        let mut stack = vec![0usize];
+        reachable[0] = true;
+        while let Some(node_id) = stack.pop() {
+            for &child in &children[node_id] {
+                if !reachable[child] {
+                    reachable[child] = true;
+                    stack.push(child);
+                }
+            }
+        }
+
+        // In-degree counted only over edges within the reachable subgraph, so a
+        // stray edge from some unreachable node can't block anything here.
+        let mut in_degree: Vec<usize> = vec![0; node_count];
+        for (node_id, kids) in children.iter().enumerate() {
+            if reachable[node_id] {
+                for &child in kids {
+                    in_degree[child] += 1;
+                }
+            }
+        }
+
+        let mut queue: VecDeque<usize> = (0..node_count)
+            .filter(|&id| reachable[id] && in_degree[id] == 0)
+            .collect();
+
+        let mut effect_order = Vec::with_capacity(node_count);
+
+        while let Some(node_id) = queue.pop_front() {
+            effect_order.push(node_id);
+            for &child in &children[node_id] {
+                in_degree[child] -= 1;
+                if in_degree[child] == 0 {
+                    queue.push_back(child);
+                }
+            }
+        }
+
+        let reachable_count = reachable.iter().filter(|&&r| r).count();
+        if effect_order.len() != reachable_count {
+            return Err(anyhow::Error::msg(
+                "Effect chain contains a cycle and can't be linearised.",
+            ));
+        }
+        if !effect_order.contains(&1) {
+            return Err(anyhow::Error::msg(
+                "Effect chain does not reach the `out` node.",
+            ));
+        }
+
+        Ok(effect_order)
     }
 
     /// Displays the nodemap in the ui provided.
@@ -351,9 +434,24 @@ impl NodeMap {
             ]
             .to_vec();
 
-            ui.painter()
-                .with_clip_rect(available_rect)
-                .line(points, Stroke::new(1.0_f32, Color32::WHITE));
+            ui.painter().with_clip_rect(available_rect).line(
+                points,
+                Stroke::new(1.0_f32, {
+                    // Match the color the line is drawn with
+                    // If the effect chain has an error draw with red.
+                    if let Some(Err(_)) = self.latest_effect_chain {
+                        Color32::RED
+                    } 
+                    // Mark that its unparsed right now
+                    else if self.latest_effect_chain.is_none() {
+                        Color32::GRAY
+                    }
+                    // Mark that its valid
+                    else {
+                        Color32::GREEN
+                    }
+                }),
+            );
         }
     }
 
@@ -516,6 +614,12 @@ impl NodeMap {
                     if connector.secondary_clicked() {
                         self.remove_connector_id(current_connector_id);
                     }
+
+                    // If the connectors were changed in any way re-analyze the effect chain
+                    if connector.secondary_clicked() || connector.clicked() {
+                        // Update latest effect chain
+                        self.latest_effect_chain = Some(self.create_effect_sequence());
+                    }
                 }
             }
 
@@ -535,6 +639,9 @@ impl NodeMap {
                             // Insert only if its correct
                             self.node_connections
                                 .insert(create_connection([selected, clicked_connector]));
+
+                            // Update latest effect chain
+                            self.latest_effect_chain = Some(self.create_effect_sequence());
 
                             // Only reset the currently dragged if we actually inserted smth
                             self.currently_selected_connector = None;
@@ -606,13 +713,63 @@ impl NodeMap {
         }
     }
 
-    pub fn remove_node(&mut self, id: usize) {
+    /// Removes the node at the specified id.
+    /// The function also updates the connections with the updated node id.
+    pub fn remove_node(
+        &mut self,
+        // This id is what the moved node will take up.
+        id: usize,
+    ) {
+        // The current last node's id.
+        // The node with this id is going to be swapped to the node thats going to be removed.
+        // We need to update the connections to point to its new address.
+        let last_node_id = self.nodes.len() - 1;
+
         // Remove the node from the Nodes list
+        // DISCLAIMER: Do not change the method of removal as this function only works with swap remove.
         self.nodes.swap_remove(id);
 
         // Remove every connection which contains this node that was removed.
         self.node_connections
             .retain(|[lhs, rhs]| !(lhs.node_id == id || rhs.node_id == id));
+
+        // Update the current connections pointing to the swapped node's old index.
+        let affected_connections = self
+            .node_connections
+            .extract_if(|[lhs, rhs]| lhs.node_id == last_node_id || rhs.node_id == last_node_id);
+
+        // Update the connections themselves
+        let updated_connections: Vec<[ConnectorID; 2]> = affected_connections
+            .map(|[lhs, rhs]| {
+                if lhs.node_id == last_node_id {
+                    return [
+                        ConnectorID {
+                            node_id: id,
+                            side: lhs.side,
+                            connector_idx: lhs.connector_idx,
+                            connector_count: lhs.connector_count,
+                        },
+                        rhs,
+                    ];
+                } else {
+                    return [
+                        lhs,
+                        ConnectorID {
+                            node_id: id,
+                            side: rhs.side,
+                            connector_idx: rhs.connector_idx,
+                            connector_count: rhs.connector_count,
+                        },
+                    ];
+                }
+            })
+            .collect();
+
+        // Reinsert the updated connections
+        self.node_connections.extend(updated_connections);
+
+        // Update latest effect chain
+        self.latest_effect_chain = Some(self.create_effect_sequence());
     }
 
     pub fn nodes(&self) -> &[Node] {

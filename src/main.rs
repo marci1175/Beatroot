@@ -9,7 +9,13 @@ use windows::{
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    panic::set_hook(Box::new(|info| {
+    // Get original panic handler
+    let original_hook = panic::take_hook();
+
+    panic::set_hook(Box::new(move |info| {
+        // Redirect panic to old handler first
+        (original_hook)(info);
+
         let payload = info.payload_as_str().unwrap_or_default();
 
         let time = chrono::Utc::now();
@@ -17,7 +23,7 @@ async fn main() -> Result<(), anyhow::Error> {
         let file_name = format!("error_{}.log", current_time);
         let path = format!(
             "{}\\Beatroot\\{file_name}",
-            std::env::var("APPDATA").unwrap()
+            std::env::var("APPDATA").unwrap_or_default()
         );
         let panic_message =
             format!("Panic occured: {payload}.\nThis error has been logged to `{path}`.");

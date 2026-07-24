@@ -1,9 +1,4 @@
-/*
-
-*/
-
-use egui::{InnerResponse, Ui};
-
+use egui::{InnerResponse, RichText, Ui};
 use crate::{app::Application, ui::windows::HelpState};
 
 pub fn display_help_window(
@@ -13,7 +8,7 @@ pub fn display_help_window(
 ) -> Option<InnerResponse<Option<()>>> {
     egui::Window::new("Help").show(ui.ctx(), |ui| {
         ui.label("Build information");
-        ui.label(format!("Build: {}{}", env!("CARGO_PKG_VERSION"), {
+        ui.label(format!("Version: {} {}", env!("CARGO_PKG_VERSION"), {
             if cfg!(debug_assertions) {
                 "debug"
             } else {
@@ -22,5 +17,10 @@ pub fn display_help_window(
         }));
         ui.separator();
         ui.hyperlink_to("API documentation", "https://www.google.com");
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(RichText::from("Checking for updates....").weak());
+            ui.spinner();
+        });
     })
 }

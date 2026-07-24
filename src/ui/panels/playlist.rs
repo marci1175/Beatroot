@@ -438,6 +438,11 @@ fn render_samples(
                 continue;
             }
 
+            // Check if we have enough lines to display whatever we need (simple bounds checking to avoid panic)
+            if track_lines.len() <= pos.track - before_first_visible_track_idx + 1 {
+                continue;
+            }
+
             // Create the rect where the sample might be rendered.
             let sample_rect = Rect::from_min_max(
                 Pos2 {
@@ -616,9 +621,26 @@ fn render_samples(
                                     ui.separator();
 
                                     ui.horizontal(|ui| {
-                                        ui.button("Fullscreen").clicked();
+                                        ui.menu_button("Options", |ui| {
+                                            if ui.button("Fullscreen").clicked() {}
+                                            if ui.button("Zoom In").clicked() {
+                                                fx_map.ui_attributes.scale += 0.2;
+                                            }
 
-                                        ui.menu_button("Add", |ui| {
+                                            if ui.button("Zoom Out").clicked() {
+                                                fx_map.ui_attributes.scale -= 0.2;
+                                            }
+
+                                            ui.separator();
+
+                                            if ui.button("Reset").clicked() {
+                                                fx_map.reset();
+                                            }
+                                        });
+
+                                        ui.separator();
+
+                                        ui.menu_button("Plugins", |ui| {
                                             ui.menu_button("Builtin", |_ui| {});
                                             ui.menu_button("External", |ui| {
                                                 for path in global_state
@@ -641,7 +663,7 @@ fn render_samples(
                                                                 path: path.clone(),
                                                             },
                                                             Pos2::default(),
-                                                            [1, 1, 0],
+                                                            [1, 0, 1],
                                                         ));
                                                     }
                                                 }

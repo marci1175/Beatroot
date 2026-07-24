@@ -79,7 +79,8 @@ impl Default for Application {
         );
 
         let fx_map = Arc::new(DashMap::new());
-
+        let plugin_manager = Arc::new(RwLock::new(PluginManager::default()));
+        
         // Create audio playback thread, this thread is only for previewing samples and playing back simple samples.
         // This is not the main playlist playbacker.
         let playback_thread_handler = create_playback_thread(host_audio.clone())
@@ -97,6 +98,7 @@ impl Default for Application {
             },
             host_audio.sink.mixer().clone(),
             fx_map.clone(),
+            plugin_manager.clone(),
         )
         .expect("Failed to create master playback thread.");
 
@@ -113,7 +115,7 @@ impl Default for Application {
             // If no paths were logged then this should be None.
             save_path: None,
 
-            plugin_manager: Arc::new(RwLock::new(PluginManager::default())),
+            plugin_manager,
 
             // If there was no audio handler added then just handle it with None.
             sample_audio_handler: Arc::new(playback_thread_handler),

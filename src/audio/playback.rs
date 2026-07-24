@@ -5,7 +5,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use rayon::ThreadPoolBuilder;
 use rodio::{Player, SampleRate, Source, mixer::Mixer};
 use rubato::{
@@ -14,8 +14,7 @@ use rubato::{
 };
 
 use crate::{
-    audio::pipeline::process_samples,
-    ui::{fx_map::NodeMap, panels::playlist::PlaybackState},
+    audio::pipeline::process_samples, plugins::PluginManager, ui::{fx_map::NodeMap, panels::playlist::PlaybackState},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -176,7 +175,7 @@ impl Source for SampleBuffer {
 }
 
 /// Wrapper around the type NodeMap.
-/// Key is the position of the sample and its index in that position (Every key is forced to have a unique key due to how vectors work.), nodemap is the effects chain to the sample.
+/// Key is the unique id of the sample, value is the effects chain to the sample (nodemap for easier user management).
 pub type FXMap = Arc<DashMap<usize, NodeMap>>;
 
 /// Time since starting the playback in nanos.
@@ -206,6 +205,7 @@ impl MasterPlaybackThread {
         host_info: HostInformation,
         host_mixer: Mixer,
         fx_map: FXMap,
+        plugin_manager: Arc<RwLock<PluginManager>>,
     ) -> anyhow::Result<Self> {
         // Create a thread pool with the default settings
         // CPU core count equals thread count.
@@ -222,7 +222,7 @@ impl MasterPlaybackThread {
         std::thread::spawn(move || {
             let _host_mixer = host_mixer_clone.clone();
             let host_info = host_info;
-            let _effects_map = fx_map_clone.clone();
+            let effects_map: Arc<DashMap<usize, NodeMap>> = fx_map_clone.clone();
 
             // Create parameters for the resampler
             let params = SincInterpolationParameters {
@@ -252,6 +252,8 @@ impl MasterPlaybackThread {
                             &params,
                             &mut processed_sample_buffer,
                             resamplers.clone(),
+                            effects_map.clone(),
+                            plugin_manager.clone(),
                         )
                         .expect("Error occured in master playback thread.");
                     }
