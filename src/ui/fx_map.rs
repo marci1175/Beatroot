@@ -1,9 +1,9 @@
 use std::{
-    collections::{HashSet, VecDeque},
-    path::PathBuf,
+    collections::{HashSet, VecDeque}, path::PathBuf, sync::Arc,
 };
 
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
+use parking_lot::RwLock;
 use strum::{EnumCount, VariantArray};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy)]
@@ -129,7 +129,7 @@ fn create_connection([a, b]: [ConnectorID; 2]) -> [ConnectorID; 2] {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PluginNodeProperties {}
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum NodeType {
     /// Main sample in.
     /// This is where the (resampled) original samples flow into the map.
@@ -141,13 +141,19 @@ pub enum NodeType {
 
     /// Plugin node.
     /// This node manages the underlying VST plugin's effects on the samples in the effects chain.
-    ExternalPlugin { path: PathBuf },
+    ExternalPlugin { path: PathBuf, state: Arc<RwLock<Vec<u8>>> },
 
     /// Internal plugin node.
     /// These are gonna be more customizable since these are directly integrated into the application.
     /// Idea:
     /// I should make a channel decoupler plugin which separates the channels into N outputs.
     InternalCustom(PluginNodeProperties),
+}
+
+impl PartialEq for NodeType {
+    fn eq(&self, other: &Self) -> bool {
+        core::mem::discriminant(self) == core::mem::discriminant(other)
+    }
 }
 
 /// Size of a connector's own box.
@@ -200,8 +206,6 @@ impl Node {
         &self.node_type
     }
 }
-
-pub enum EffectSequenceNode {}
 
 impl NodeMap {
     /// Constructs an empty nodemap.

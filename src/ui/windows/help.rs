@@ -20,7 +20,7 @@ pub fn display_help_window(
         ui.separator();
 
         ui.label(RichText::from("Updates").size(20.).strong());
-        
+
         // Clone the status to avoid a deadlock
         let status = global_state
             .update_available

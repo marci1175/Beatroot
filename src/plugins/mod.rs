@@ -7,7 +7,7 @@ use std::{
 
 use ::vst::api::{AEffect, PluginMain};
 use indexmap::IndexMap;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use strum::Display;
 use windows::Win32::{
     Foundation::{HMODULE, HWND, LPARAM, WPARAM},
@@ -19,10 +19,8 @@ use crate::{
         library::{get_fn_addr, load_library, unload_library},
         mem::str_to_pcwstr,
         windowing::{create_window, register_class},
-    },
-    plugins::{
-        api::vst2::{AEffectOpcode, ERect},
-        vst2::host_callback,
+    }, plugins::{
+        api::vst2::{AEffectOpcode, ERect}, vst2::{host_callback, restore_state, save_state},
     },
 };
 
@@ -86,15 +84,43 @@ pub struct PluginHandle {
 
     /// The type of the plugin
     pub plugin_type: PluginType,
-
+    
     /// Handle to the loaded library in memory.
     pub library_handle: HMODULE,
+    
+    /// Every plugin has its memory snapshotted at startup to know what should a valid "default" paramter list should look like.
+    /// This is used as a default setting for the plugin.
+    pub startup_memory_snapshot: Vec<u8>,
 
     /// The window's handle if the plugin is being displayed.
     /// This is used to prevent opening up multiple windows to the same plugin and when removing the plugin.
     /// The underlying usize is actual a raw pointer casted to usize so that it can be Sent between threads.
     /// When handling this usize make sure to cast it to a `HWND(*mut c_void)`.
     pub displayed_window_handle: Arc<Mutex<Option<usize>>>,
+}
+
+impl PluginHandle {
+    pub fn load_state(&self, state: &[u8]) {
+        match self.plugin_type {
+            PluginType::Vst2 => {
+                unsafe { restore_state(self.plugin_handle_ptr as *mut _, state); }
+            },
+            PluginType::Vst3 => todo!(),
+            PluginType::Clap => todo!(),
+            PluginType::Lua => todo!(),
+        }
+    }
+
+    pub fn save_state(&self) -> Vec<u8> {
+        match self.plugin_type {
+            PluginType::Vst2 => {
+                unsafe { save_state(self.plugin_handle_ptr as *mut _) }
+            },
+            PluginType::Vst3 => todo!(),
+            PluginType::Clap => todo!(),
+            PluginType::Lua => todo!(),
+        }
+    }
 }
 
 impl PartialEq for PluginHandle {
@@ -113,6 +139,11 @@ pub struct PluginWindowState {
     pub on_close: Box<dyn Fn()>,
     /// This callback is called when the actual window is destroyed where the plugin was displayed.
     pub on_destroy: Box<dyn Fn()>,
+    /// The plugin's handle that this window is for.
+    pub plugin_handle: PluginHandle,
+    /// The handle of the state buffer for the plugin.
+    /// The reason this is atomic is that multiple threads can write and read this entry.
+    pub state_handle: Arc<RwLock<Vec<u8>>>,
 }
 
 impl PluginHandle {
@@ -167,9 +198,12 @@ impl PluginHandle {
         Ok(())
     }
 
-    pub fn open(&self) -> anyhow::Result<()> {
+    pub fn open(&self, state: Arc<RwLock<Vec<u8>>>) -> anyhow::Result<()> {
         // Clone the window handle so that it can be modified from the other thread
         let window_hwnd = self.displayed_window_handle.clone();
+
+        // Load the plugin's state
+        self.load_state(&*state.read());
 
         // Match the pulgin type and display appropriately
         match self.plugin_type {
@@ -244,9 +278,11 @@ impl PluginHandle {
                         // Signal that no window is open for this plugin.
                         *window_handle_clone.lock() = None;
                     }),
+                    plugin_handle: self.clone(),
+                    state_handle: state.clone(),
                 };
 
-                // Leak the state so that it wont get deallocated
+                // Leak the state so that it wont get deallocated when this scope ends
                 let state_ptr = Box::into_raw(Box::new(window_state));
 
                 // Create window
@@ -369,10 +405,20 @@ impl PluginManager {
                         self.loaded_plugins.insert(
                             path.clone(),
                             PluginHandle {
+                                // The pointer to the plugin's handler
                                 plugin_handle_ptr: plugin_callback as *mut _,
+                                
+                                // The plugins type
                                 plugin_type: loader.plugin_type,
+                                
+                                // The raw dll module handle
                                 library_handle: module_handle,
+
+                                // Indicates whether a window is opened to the plugin
                                 displayed_window_handle: Arc::new(Mutex::new(None)),
+                                
+                                // When loading up the plugin make sure to snapshot its settings memory so that we know whats a "default" paramater list to the plugin.
+                                startup_memory_snapshot: unsafe { save_state(plugin_callback) },
                             },
                         );
                     } else {

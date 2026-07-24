@@ -211,3 +211,52 @@ pub extern "C" fn host_callback(
         1
     }
 }
+
+const EFF_FLAGS_PROGRAM_CHUNKS: i32 = 1 << 5;
+
+pub unsafe fn save_state(effect: *mut AEffect) -> Vec<u8> {
+    let flags = (unsafe { &*effect }).flags;
+    if flags & EFF_FLAGS_PROGRAM_CHUNKS != 0 {
+        let mut ptr: *mut c_void = std::ptr::null_mut();
+        let size = ((unsafe { &*effect }).dispatcher)(
+            effect,
+            VstOpcode::GetChunk.as_i32(),
+            0, /* bank, not just current program */
+            0,
+            &mut ptr as *mut _ as *mut c_void,
+            0.0,
+        );
+        // IMPORTANT: ptr is owned by the plugin. Copy it NOW —
+        // it may be invalidated by literally any other dispatcher call.
+        unsafe { std::slice::from_raw_parts(ptr as *const u8, size as usize).to_vec() }
+    } else {
+        // fall back to raw f32 param dump — not portable across plugin versions,
+        // but works for your own save/restore within the same session
+        let n = (unsafe { &*effect }).numParams;
+        let mut buf = Vec::with_capacity(n as usize * 4);
+        for i in 0..n {
+            let v = ((unsafe { &*effect }).getParameter)(effect, i);
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+        buf
+    }
+}
+
+pub unsafe fn restore_state(effect: *mut AEffect, data: &[u8]) {
+    let flags = (unsafe { &*effect }).flags;
+    if flags & EFF_FLAGS_PROGRAM_CHUNKS != 0 {
+        ((unsafe { &*effect }).dispatcher)(
+            effect,
+            VstOpcode::SetChunk.as_i32(),
+            0,
+            data.len() as isize,
+            data.as_ptr() as *mut c_void,
+            0.0,
+        );
+    } else {
+        for (i, chunk) in data.chunks_exact(4).enumerate() {
+            let v = f32::from_le_bytes(chunk.try_into().unwrap());
+            ((unsafe { &*effect }).setParameter)(effect, i as i32, v);
+        }
+    }
+}

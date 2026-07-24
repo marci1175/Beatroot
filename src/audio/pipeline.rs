@@ -83,13 +83,13 @@ fn add_resamplers(
 }
 
 fn resample(
-    _workers: &ThreadPool,
+    workers: &ThreadPool,
     original_samples: Vec<SampleBuffer>,
     host_info: &HostInformation,
     resamplers: Arc<DashMap<u32, parking_lot::lock_api::Mutex<parking_lot::RawMutex, Async<f32>>>>,
 ) -> Map<IntoIter<SampleBuffer>, impl Fn(SampleBuffer) -> SampleBuffer> {
     // Run on worker threads specifically created for this.
-    _workers.install(|| {
+    workers.install(|| {
         original_samples.into_par_iter().map(move |sample| {
             // Resample if needed
             if sample.sample_rate() != host_info.sample_rate {
@@ -157,7 +157,7 @@ fn apply_effects(
                         // Output and input nodes do not do anything
                         crate::ui::fx_map::NodeType::In | crate::ui::fx_map::NodeType::Out => (),
                         // Apply the effect from the external plugin, apply it appropirately to the effect type.
-                        crate::ui::fx_map::NodeType::ExternalPlugin { path } => {
+                        crate::ui::fx_map::NodeType::ExternalPlugin { path, state } => {
                             let active_plugins = &plugin_manager.read().loaded_plugins;
                             let plugin = active_plugins.get(path);
 

@@ -7,12 +7,10 @@ use std::{
 };
 
 use crate::{
-    audio::playback::MasterPlaybackThread,
-    internals::{
+    audio::playback::MasterPlaybackThread, internals::{
         sample::{SampleProperties, generate_sample_waveform},
         utils::find_value_inbetween,
-    },
-    ui::{
+    }, plugins::vst2::{restore_state, save_state}, ui::{
         fx_map::{Node, NodeMap, NodeType},
         panels::{
             lib::{
@@ -643,11 +641,11 @@ fn render_samples(
                                         ui.menu_button("Plugins", |ui| {
                                             ui.menu_button("Builtin", |_ui| {});
                                             ui.menu_button("External", |ui| {
-                                                for path in global_state
+                                                for (path, plugin_handle) in global_state
                                                     .plugin_manager
                                                     .read()
                                                     .loaded_plugins
-                                                    .keys()
+                                                    .iter()
                                                 {
                                                     if ui
                                                         .button(
@@ -661,6 +659,7 @@ fn render_samples(
                                                         fx_map.push_node(Node::new(
                                                             NodeType::ExternalPlugin {
                                                                 path: path.clone(),
+                                                                state: Arc::new(RwLock::new(plugin_handle.startup_memory_snapshot.clone())),
                                                             },
                                                             Pos2::default(),
                                                             [1, 0, 1],
@@ -691,7 +690,7 @@ fn render_samples(
                                             match node.node_type() {
                                                 NodeType::In => {}
                                                 NodeType::Out => {}
-                                                NodeType::ExternalPlugin { path } => {
+                                                NodeType::ExternalPlugin { path, state } => {
                                                     if let Some(handle) = global_state
                                                         .plugin_manager
                                                         .read()
@@ -707,8 +706,9 @@ fn render_samples(
                                                             // Open the plugin by creating a window and providing that handle to the plugin's renderer.
                                                             if ui.button("Open").clicked() {
                                                                 // Display plugin
+                                                                // Load in the state of the plugin as we have stored it
                                                                 display_error_as_toast(
-                                                                    handle.open(),
+                                                                    handle.open(state.clone()),
                                                                     ToastStyle::default(),
                                                                     this.toasts.clone(),
                                                                 );
