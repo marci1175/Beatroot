@@ -12,6 +12,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // Get original panic handler
     let original_hook = panic::take_hook();
 
+    // Create a custom panic handler for the application that informs the user about the error.
     panic::set_hook(Box::new(move |info| {
         // Redirect panic to old handler first
         (original_hook)(info);

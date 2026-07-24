@@ -11,7 +11,7 @@ use crate::{
         lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread},
         playback::{FXMap, HostInformation, MasterPlaybackThread},
     },
-    internals::utils::ExactLengthBuffer,
+    internals::{endpoint::check_for_update, utils::ExactLengthBuffer},
     plugins::PluginManager,
     project_manager::open_project,
     ui::{
@@ -69,6 +69,13 @@ pub struct Application {
     /// These toasts are displayed directly in the root window.
     #[serde(skip)]
     pub toasts: Arc<Mutex<Toasts>>,
+
+    /// The application checks if the version is different than the latest version available on the static api.
+    ///
+    /// API URL: "https://marci1175.github.io/Beatroot/version/status.json"
+    ///
+    #[serde(skip)]
+    pub update_available: Arc<Mutex<Option<anyhow::Result<bool>>>>,
 }
 
 impl Default for Application {
@@ -102,6 +109,13 @@ impl Default for Application {
         )
         .expect("Failed to create master playback thread.");
 
+        // Decides if an update is available for the application.
+        // This is moved into async threads so this needs to be atomic.
+        // This is a bit overengineered for the use haha
+        let update_available: Arc<Mutex<Option<anyhow::Result<bool>>>> = Arc::new(Mutex::new(None));
+        // Fetch from API
+        check_for_update(update_available.clone());
+
         Self {
             // Store the state of the panels separately
             panel_states: Arc::new(PanelStates::default()),
@@ -124,6 +138,7 @@ impl Default for Application {
 
             toasts: Arc::new(Mutex::new(Toasts::new())),
 
+            update_available,
             fx_map,
         }
     }
@@ -224,6 +239,20 @@ impl App for AppRoot {
                 if ui.button("Help").clicked() {
                     self.window_mngr.help = !self.window_mngr.help;
                 }
+
+                // Push the update text to the far right of this horizontal strip
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let is_update_available =
+                        matches!(&*self.application.update_available.lock(), Some(Ok(true)));
+
+                    // If there is an update available inform the user in the main screen too
+                    if is_update_available {
+                        ui.hyperlink_to(
+                            RichText::from("Update available!").color(Color32::GREEN),
+                            "https://github.com/marci1175/Beatroot/releases",
+                        );
+                    }
+                });
             });
         });
 

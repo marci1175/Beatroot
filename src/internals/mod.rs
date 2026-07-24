@@ -1,3 +1,4 @@
+pub mod endpoint;
 pub mod fs;
 pub mod library;
 pub mod mem;
