@@ -12,7 +12,10 @@ use crate::{
         playback::{FXMap, HostInformation, MasterPlaybackThread},
     },
     internals::{endpoint::check_for_update, utils::ExactLengthBuffer},
-    plugins::PluginManager,
+    plugins::{
+        PluginManager, create_plugin_state_writer,
+        vst2::{set_parameter_in_state},
+    },
     project_manager::open_project,
     ui::{
         panels::lib::{GlobalState, Panel, PanelStates, create_panels},
@@ -113,6 +116,7 @@ impl Default for Application {
         // This is moved into async threads so this needs to be atomic.
         // This is a bit overengineered for the use haha
         let update_available: Arc<Mutex<Option<anyhow::Result<bool>>>> = Arc::new(Mutex::new(None));
+
         // Fetch from API
         check_for_update(update_available.clone());
 
@@ -154,6 +158,10 @@ impl AppRoot {
 
         // Initalize plugins at startup
         app_ctx.application.plugin_manager.write().init();
+
+        // Spawn the thread responsible for writing the changes made in the plugins to the nodes
+        // NOTICE: This should never panic as there is no way currently to recover this.
+        create_plugin_state_writer(app_ctx.application.plugin_manager.clone(), app_ctx.application.fx_map.clone());
 
         app_ctx
     }

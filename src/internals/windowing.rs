@@ -27,7 +27,7 @@ unsafe extern "system" fn wnd_proc(
 
                 // Call the `on_close` callback of the window
                 (state.on_close)();
-                
+
                 // Save the current state of the plugin when closing the window
                 *state.state_handle.write() = state.plugin_handle.save_state();
             }
@@ -104,4 +104,19 @@ pub fn run_message_loop() {
             DispatchMessageW(&msg);
         }
     }
+}
+
+/// The information we are provided when opening a window to a plugin.
+#[derive(Debug, Clone, Copy)]
+pub struct PluginWindowInformation {
+    /// The underlying usize is actual a raw pointer casted to usize so that it can be Sent between threads.
+    /// When handling this usize make sure to cast it to a `HWND(*mut c_void)`.
+    pub window_hwnd: usize,
+
+    /// The node's id which was used to create this window.
+    /// This is useful since we know which node's copy of the plugin's state to modify.
+    pub node_id: usize,
+    /// The sample's id which has the plugin opened.
+    /// This too is used to track which state to modify.
+    pub sample_id: usize,
 }

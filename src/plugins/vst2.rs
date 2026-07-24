@@ -1,20 +1,54 @@
 use crate::plugins::api::vst2::{AudioMasterOpcode, VstFileSelect, VstOpcode};
-use std::ffi::{c_str, c_void};
+use crossbeam_channel::{Receiver, Sender, unbounded};
+use parking_lot::Mutex;
+use std::{
+    collections::VecDeque,
+    ffi::{c_str, c_void},
+    sync::{Arc, LazyLock},
+};
 use vst::api::AEffect;
+
+/// A queue for the plugin to request save changes in the DAW.
+/// These "requests" contain which plugin requested and what.
+pub static PARAMETER_CHANNEL: LazyLock<(Sender<Parameter>, Receiver<Parameter>)> =
+    LazyLock::new(|| unbounded());
+
+#[derive(Debug, Clone, Copy)]
+pub struct Parameter {
+    /// The pointer to the plugin's handler
+    /// The underlying type may change from plugin to plugin.
+    pub plugin_pointer: usize,
+
+    /// The index of the parameter.
+    pub index: i32,
+
+    /// The value of the parameter.
+    pub value: f32,
+}
 
 /// Main host callback passed to every plugin.
 pub extern "C" fn host_callback(
     effect: *mut AEffect,
     opcode: i32,
-    _index: i32,
+    index: i32,
     _value: isize,
     ptr: *mut c_void,
-    _opt: f32,
+    opt: f32,
 ) -> isize {
     // Check if the opcode is supported.
     if let Ok(opcode) = AudioMasterOpcode::try_from(opcode) {
         match opcode {
-            AudioMasterOpcode::Automate => 0,
+            // This opcode is called when the vst2 plugin is modified via its ui.
+            AudioMasterOpcode::Automate => {
+                // Store the parameter change along with which plugin was called
+                PARAMETER_CHANNEL.0.send(Parameter {
+                    plugin_pointer: effect as usize,
+                    index,
+                    value: opt,
+                });
+
+                0
+            }
             AudioMasterOpcode::Version => 2400,
             AudioMasterOpcode::CurrentId => 0,
             AudioMasterOpcode::Idle => {
@@ -242,6 +276,15 @@ pub unsafe fn save_state(effect: *mut AEffect) -> Vec<u8> {
     }
 }
 
+pub unsafe fn set_parameter(effect: *mut AEffect, index: i32, value: f32) {
+    ((unsafe { &*effect }).setParameter)(effect, index, value)
+}
+
+pub fn set_parameter_in_state(state: &mut [u8], index: usize, value: f32) {
+    let offset = index * 4;
+    state[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
 pub unsafe fn restore_state(effect: *mut AEffect, data: &[u8]) {
     let flags = (unsafe { &*effect }).flags;
     if flags & EFF_FLAGS_PROGRAM_CHUNKS != 0 {
@@ -256,7 +299,7 @@ pub unsafe fn restore_state(effect: *mut AEffect, data: &[u8]) {
     } else {
         for (i, chunk) in data.chunks_exact(4).enumerate() {
             let v = f32::from_le_bytes(chunk.try_into().unwrap());
-            ((unsafe { &*effect }).setParameter)(effect, i as i32, v);
+            unsafe { set_parameter(effect, i as i32, v) };
         }
     }
 }

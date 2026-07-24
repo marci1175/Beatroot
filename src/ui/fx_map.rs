@@ -1,5 +1,7 @@
 use std::{
-    collections::{HashSet, VecDeque}, path::PathBuf, sync::Arc,
+    collections::{HashSet, VecDeque},
+    path::PathBuf,
+    sync::Arc,
 };
 
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
@@ -141,7 +143,10 @@ pub enum NodeType {
 
     /// Plugin node.
     /// This node manages the underlying VST plugin's effects on the samples in the effects chain.
-    ExternalPlugin { path: PathBuf, state: Arc<RwLock<Vec<u8>>> },
+    ExternalPlugin {
+        path: PathBuf,
+        state: Arc<RwLock<Vec<u8>>>,
+    },
 
     /// Internal plugin node.
     /// These are gonna be more customizable since these are directly integrated into the application.

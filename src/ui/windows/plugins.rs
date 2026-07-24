@@ -180,7 +180,7 @@ pub fn display_plugins_window(
                                     // If a plugin was removed this is a Some.
                                     let mut removed_plugin: Option<PathBuf> = None;
 
-                                    plugin_manager.loaded_plugins.retain(|path, handle| {
+                                    for (path, _, handle) in plugin_manager.loaded_plugins.iter() {
                                         ui.horizontal(|ui| {
                                             // Show the name of the plugin
                                             ui.label(
@@ -200,18 +200,13 @@ pub fn display_plugins_window(
                                                     ToastStyle::default(),
                                                     global_state.toasts.clone(),
                                                 );
-
-                                                // Remove this entry from the loaded plugin's list
-                                                false
-                                            } else {
-                                                true
                                             }
-                                        })
-                                        .inner
-                                    });
+                                        });
+                                    }
 
                                     // If a plugin has been stored as removed remove it from the application too so that its not reloaded at startup.
                                     if let Some(path) = removed_plugin {
+                                        plugin_manager.loaded_plugins.remove_key1(&path);
                                         plugin_manager.plugin_loaders.swap_remove(&path);
                                     }
                                 });

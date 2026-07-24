@@ -159,7 +159,7 @@ fn apply_effects(
                         // Apply the effect from the external plugin, apply it appropirately to the effect type.
                         crate::ui::fx_map::NodeType::ExternalPlugin { path, state } => {
                             let active_plugins = &plugin_manager.read().loaded_plugins;
-                            let plugin = active_plugins.get(path);
+                            let plugin = active_plugins.get_key1(path);
 
                             // Get the plugin from the loaded plugins
                             if let Some(plugin) = plugin {

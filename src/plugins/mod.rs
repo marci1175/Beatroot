@@ -1,11 +1,10 @@
 use std::{
-    collections::HashMap,
-    ffi::c_void,
-    path::PathBuf,
-    sync::{Arc, LazyLock},
+    any, collections::HashMap, ffi::c_void, path::PathBuf, sync::{Arc, LazyLock}, time::Duration,
 };
 
 use ::vst::api::{AEffect, PluginMain};
+use anyhow::anyhow;
+use dashmap::DashMap;
 use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
 use strum::Display;
@@ -18,10 +17,16 @@ use crate::{
     internals::{
         library::{get_fn_addr, load_library, unload_library},
         mem::str_to_pcwstr,
-        windowing::{create_window, register_class},
-    }, plugins::{
-        api::vst2::{AEffectOpcode, ERect}, vst2::{host_callback, restore_state, save_state},
+        windowing::{PluginWindowInformation, create_window, register_class},
     },
+    plugins::{
+        api::vst2::{AEffectOpcode, ERect},
+        vst2::{
+            PARAMETER_CHANNEL, host_callback, restore_state, save_state, set_parameter,
+            set_parameter_in_state,
+        },
+    },
+    ui::fx_map::NodeMap,
 };
 
 pub mod api;
@@ -84,26 +89,28 @@ pub struct PluginHandle {
 
     /// The type of the plugin
     pub plugin_type: PluginType,
-    
+
     /// Handle to the loaded library in memory.
     pub library_handle: HMODULE,
-    
+
     /// Every plugin has its memory snapshotted at startup to know what should a valid "default" paramter list should look like.
     /// This is used as a default setting for the plugin.
     pub startup_memory_snapshot: Vec<u8>,
 
-    /// The window's handle if the plugin is being displayed.
-    /// This is used to prevent opening up multiple windows to the same plugin and when removing the plugin.
-    /// The underlying usize is actual a raw pointer casted to usize so that it can be Sent between threads.
-    /// When handling this usize make sure to cast it to a `HWND(*mut c_void)`.
-    pub displayed_window_handle: Arc<Mutex<Option<usize>>>,
+    ///
+    /// The window's handle and the node which was used to open it up if the plugin is being displayed.
+    /// This is used to prevent opening up multiple windows to the same plugin and as handle to the window we need to destroy when removing the plugin.
+    ///
+    /// This also provides information to the host to know which sample's node's state to modify.
+    ///
+    pub displayed_window_information: Arc<Mutex<Option<PluginWindowInformation>>>,
 }
 
 impl PluginHandle {
     pub fn load_state(&self, state: &[u8]) {
         match self.plugin_type {
-            PluginType::Vst2 => {
-                unsafe { restore_state(self.plugin_handle_ptr as *mut _, state); }
+            PluginType::Vst2 => unsafe {
+                restore_state(self.plugin_handle_ptr as *mut _, state);
             },
             PluginType::Vst3 => todo!(),
             PluginType::Clap => todo!(),
@@ -113,13 +120,36 @@ impl PluginHandle {
 
     pub fn save_state(&self) -> Vec<u8> {
         match self.plugin_type {
-            PluginType::Vst2 => {
-                unsafe { save_state(self.plugin_handle_ptr as *mut _) }
-            },
+            PluginType::Vst2 => unsafe { save_state(self.plugin_handle_ptr as *mut _) },
             PluginType::Vst3 => todo!(),
             PluginType::Clap => todo!(),
             PluginType::Lua => todo!(),
         }
+    }
+
+    pub fn change_paramter(
+        &self,
+        param_index: usize,
+        value: Box<dyn any::Any>,
+    ) -> anyhow::Result<()> {
+        match self.plugin_type {
+            PluginType::Vst2 => {
+                unsafe {
+                    set_parameter(
+                        self.plugin_handle_ptr as *mut _,
+                        param_index as i32,
+                        *(value
+                            .downcast::<f32>()
+                            .map_err(|_| anyhow!("Invalid parameter provided."))?),
+                    )
+                };
+            }
+            PluginType::Vst3 => todo!(),
+            PluginType::Clap => todo!(),
+            PluginType::Lua => todo!(),
+        };
+
+        Ok(())
     }
 }
 
@@ -156,9 +186,9 @@ impl PluginHandle {
                 let dispatcher = unsafe { effect.read() }.dispatcher;
 
                 // Destroy window if open
-                if let Some(window_handle) = *self.displayed_window_handle.lock() {
+                if let Some(window_info) = *self.displayed_window_information.lock() {
                     // Recast the usize to a hwnd
-                    let hwnd = HWND(window_handle as *mut c_void);
+                    let hwnd = HWND(window_info.window_hwnd as *mut c_void);
 
                     // Close the window of the plugin
                     unsafe {
@@ -198,9 +228,19 @@ impl PluginHandle {
         Ok(())
     }
 
-    pub fn open(&self, state: Arc<RwLock<Vec<u8>>>) -> anyhow::Result<()> {
+    ///
+    /// Open a plugin to the GUI in the application.
+    /// This creates a separate window from the original host window, which always stays on top.
+    /// We need to provide additional information so that we know which node's state we are modifying exactly.
+    ///
+    pub fn open(
+        &self,
+        state: Arc<RwLock<Vec<u8>>>,
+        node_id: usize,
+        sample_id: usize,
+    ) -> anyhow::Result<()> {
         // Clone the window handle so that it can be modified from the other thread
-        let window_hwnd = self.displayed_window_handle.clone();
+        let window_info = self.displayed_window_information.clone();
 
         // Load the plugin's state
         self.load_state(&*state.read());
@@ -258,7 +298,7 @@ impl PluginHandle {
                 let class_name = register_class(name).unwrap();
 
                 // Clone the handle to the window
-                let window_handle_clone = window_hwnd.clone();
+                let window_handle_clone = window_info.clone();
 
                 // Create a state for the window
                 let window_state = PluginWindowState {
@@ -294,7 +334,12 @@ impl PluginHandle {
                 )
                 .unwrap();
 
-                *window_hwnd.lock() = Some(hwnd.0 as usize);
+                // Provide the window information
+                *window_info.lock() = Some(PluginWindowInformation {
+                    window_hwnd: hwnd.0 as usize,
+                    node_id,
+                    sample_id,
+                });
 
                 // The plugin to paint in the window handle
                 (dispatcher)(
@@ -346,7 +391,7 @@ pub struct PluginManager {
 
     #[serde(skip)]
     /// This field should get reinitalized at every startup since the libraries are dynamically resolved.
-    pub loaded_plugins: HashMap<PathBuf, PluginHandle>,
+    pub loaded_plugins: double_map::DHashMap<PathBuf, usize, PluginHandle>,
 }
 
 impl PluginManager {
@@ -404,19 +449,20 @@ impl PluginManager {
                         // Store plugin
                         self.loaded_plugins.insert(
                             path.clone(),
+                            plugin_callback as usize,
                             PluginHandle {
                                 // The pointer to the plugin's handler
                                 plugin_handle_ptr: plugin_callback as *mut _,
-                                
+
                                 // The plugins type
                                 plugin_type: loader.plugin_type,
-                                
+
                                 // The raw dll module handle
                                 library_handle: module_handle,
 
                                 // Indicates whether a window is opened to the plugin
-                                displayed_window_handle: Arc::new(Mutex::new(None)),
-                                
+                                displayed_window_information: Arc::new(Mutex::new(None)),
+
                                 // When loading up the plugin make sure to snapshot its settings memory so that we know whats a "default" paramater list to the plugin.
                                 startup_memory_snapshot: unsafe { save_state(plugin_callback) },
                             },
@@ -434,4 +480,66 @@ impl PluginManager {
             loader.status = PluginStatus::FileNotFound;
         }
     }
+}
+
+pub fn create_plugin_state_writer(
+    plugin_manager: Arc<RwLock<PluginManager>>,
+    fx_map: Arc<DashMap<usize, NodeMap>>,
+) {
+    std::thread::spawn(move || {
+        loop {
+            // Update stored plugin states when the plugin is modified.
+            // Do not block waiting for a plugin to write into the queue while the mutex is locked.
+            if let Ok(param) = PARAMETER_CHANNEL.1.recv() {
+                // Check which plugin pushed to the parameter queue
+                if let Some(handle) = plugin_manager
+                    .read()
+                    .loaded_plugins
+                    .get_key2(&param.plugin_pointer)
+                {
+                    // Check if the plugin that inserted in the parameter queue is open, and what information was it provided with.
+                    // This way we will know what node opened the window from the plugin window information.
+                    if let Some(Some(window_information)) =
+                        handle.displayed_window_information.try_lock_for(Duration::from_secs(2)).as_deref()
+                    {
+                        // This is the node which was representing the plugin which was modified
+                        let modified_node = fx_map
+                            .get(&window_information.sample_id)
+                            .map(|nodemap| nodemap.nodes().get(window_information.node_id).cloned())
+                            .flatten();
+
+                        if let Some(node) = modified_node {
+                            // Modify the locally stored state based on the plugin type
+                            match node.node_type() {
+                                crate::ui::fx_map::NodeType::In
+                                | crate::ui::fx_map::NodeType::Out => (),
+                                crate::ui::fx_map::NodeType::ExternalPlugin { state, .. } => {
+                                    // Get the plugin's type
+                                    match handle.plugin_type {
+                                        crate::plugins::PluginType::Vst2 => {
+                                            // Get the locally stored plugin state
+                                            let plugin_state = &mut *state.write();
+
+                                            // Set the parameter's state inside the locally stored parameter buffer.
+                                            set_parameter_in_state(
+                                                plugin_state,
+                                                param.index as usize,
+                                                param.value,
+                                            );
+                                        }
+                                        crate::plugins::PluginType::Vst3 => todo!(),
+                                        crate::plugins::PluginType::Clap => todo!(),
+                                        crate::plugins::PluginType::Lua => todo!(),
+                                    }
+                                }
+                                crate::ui::fx_map::NodeType::InternalCustom(
+                                    plugin_node_properties,
+                                ) => todo!(),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
 }

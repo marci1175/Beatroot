@@ -7,10 +7,13 @@ use std::{
 };
 
 use crate::{
-    audio::playback::MasterPlaybackThread, internals::{
+    audio::playback::MasterPlaybackThread,
+    internals::{
         sample::{SampleProperties, generate_sample_waveform},
         utils::find_value_inbetween,
-    }, plugins::vst2::{restore_state, save_state}, ui::{
+    },
+    plugins::vst2::{restore_state, save_state},
+    ui::{
         fx_map::{Node, NodeMap, NodeType},
         panels::{
             lib::{
@@ -578,10 +581,13 @@ fn render_samples(
                     ui.label(RichText::from(&sample.name).weak());
                     ui.separator();
 
+                    // Effects map of all the samples present in the playlist. (If they have one)
                     let fx_map = global_state.fx_map.clone();
-                    let id = sample.id;
 
-                    let is_fx_enabled = fx_map.contains_key(&id);
+                    // The unique id number to the sample
+                    let sample_id = sample.id;
+
+                    let is_fx_enabled = fx_map.contains_key(&sample_id);
                     let fx_toggle = ui.toggle_value(
                         &mut is_fx_enabled.clone(),
                         match is_fx_enabled {
@@ -592,14 +598,14 @@ fn render_samples(
 
                     if fx_toggle.clicked() {
                         if !is_fx_enabled {
-                            fx_map.insert(id, NodeMap::new());
+                            fx_map.insert(sample_id, NodeMap::new());
                         } else {
-                            fx_map.remove(&id);
+                            fx_map.remove(&sample_id);
                         }
                     }
 
                     // This menubutton is deactivated until an effect map is created manually
-                    ui.add_enabled_ui(fx_map.contains_key(&id), |ui| {
+                    ui.add_enabled_ui(fx_map.contains_key(&sample_id), |ui| {
                         // Create a menu button which displays the effects
                         ui.menu_button("Effects", |ui| {
                             // Create desired size of the window
@@ -610,7 +616,7 @@ fn render_samples(
 
                             // Allocate the ui so that it cannot automatically grow later.
                             ui.allocate_ui(desired_size, |ui| {
-                                if let Some(mut fx_map) = fx_map.get_mut(&id) {
+                                if let Some(mut fx_map) = fx_map.get_mut(&sample_id) {
                                     let fx_map = fx_map.value_mut();
 
                                     // Display effects chain map
@@ -641,7 +647,7 @@ fn render_samples(
                                         ui.menu_button("Plugins", |ui| {
                                             ui.menu_button("Builtin", |_ui| {});
                                             ui.menu_button("External", |ui| {
-                                                for (path, plugin_handle) in global_state
+                                                for (path, _, plugin_handle) in global_state
                                                     .plugin_manager
                                                     .read()
                                                     .loaded_plugins
@@ -659,7 +665,11 @@ fn render_samples(
                                                         fx_map.push_node(Node::new(
                                                             NodeType::ExternalPlugin {
                                                                 path: path.clone(),
-                                                                state: Arc::new(RwLock::new(plugin_handle.startup_memory_snapshot.clone())),
+                                                                state: Arc::new(RwLock::new(
+                                                                    plugin_handle
+                                                                        .startup_memory_snapshot
+                                                                        .clone(),
+                                                                )),
                                                             },
                                                             Pos2::default(),
                                                             [1, 0, 1],
@@ -672,8 +682,8 @@ fn render_samples(
                                         ui.separator();
 
                                         // Only try to display the options if there is a node selected.
-                                        if let Some(id) = fx_map.currently_selected_node_id {
-                                            let node = fx_map.get_node(id).clone();
+                                        if let Some(node_id) = fx_map.currently_selected_node_id {
+                                            let node = fx_map.get_node(node_id).clone();
 
                                             // Only display the remove button for nodes that can be removed.
                                             if node.node_type() != &NodeType::In
@@ -681,7 +691,7 @@ fn render_samples(
                                                 && ui.button("Remove").clicked()
                                             {
                                                 // Remove the node and its connections from the map
-                                                fx_map.remove_node(id);
+                                                fx_map.remove_node(node_id);
 
                                                 // Reset selected node id
                                                 fx_map.currently_selected_node_id = None;
@@ -695,10 +705,10 @@ fn render_samples(
                                                         .plugin_manager
                                                         .read()
                                                         .loaded_plugins
-                                                        .get(path)
+                                                        .get_key1(path)
                                                     {
                                                         let is_open = handle
-                                                            .displayed_window_handle
+                                                            .displayed_window_information
                                                             .lock()
                                                             .is_none();
 
@@ -708,7 +718,11 @@ fn render_samples(
                                                                 // Display plugin
                                                                 // Load in the state of the plugin as we have stored it
                                                                 display_error_as_toast(
-                                                                    handle.open(state.clone()),
+                                                                    handle.open(
+                                                                        state.clone(),
+                                                                        node_id,
+                                                                        sample_id,
+                                                                    ),
                                                                     ToastStyle::default(),
                                                                     this.toasts.clone(),
                                                                 );
