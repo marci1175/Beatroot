@@ -20,13 +20,23 @@ pub fn display_help_window(
         ui.separator();
 
         ui.label(RichText::from("Updates").size(20.).strong());
+        
+        // Clone the status to avoid a deadlock
+        let status = global_state
+            .update_available
+            .lock()
+            .as_ref()
+            .map(|r| match r {
+                Ok(b) => Ok(*b),
+                Err(e) => Err(e.to_string()),
+            });
 
         // Inform user if an update is available
-        match &*global_state.update_available.lock() {
+        match status {
             Some(fetch_res) => {
                 match fetch_res {
                     Ok(result) => {
-                        if *result {
+                        if result {
                             // Redirect user to releases
                             ui.hyperlink_to(
                                 RichText::from("Update available!").color(Color32::GREEN),
