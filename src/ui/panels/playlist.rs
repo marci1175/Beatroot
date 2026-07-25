@@ -646,7 +646,7 @@ fn render_samples(
                                         ui.menu_button("Plugins", |ui| {
                                             ui.menu_button("Builtin", |_ui| {});
                                             ui.menu_button("External", |ui| {
-                                                for (path, _, plugin_handle) in global_state
+                                                for (path, plugin_handle) in global_state
                                                     .plugin_manager
                                                     .read()
                                                     .loaded_plugins
@@ -704,12 +704,14 @@ fn render_samples(
                                                         .plugin_manager
                                                         .read()
                                                         .loaded_plugins
-                                                        .get_key1(path)
+                                                        .get(path)
                                                     {
-                                                        let is_open = handle
-                                                            .displayed_window_information
-                                                            .lock()
-                                                            .is_none();
+                                                        let is_open = false;
+                                                        
+                                                        // handle
+                                                        //     .displayed_window_information
+                                                        //     .lock()
+                                                        //     .is_none();
 
                                                         ui.add_enabled_ui(is_open, |ui| {
                                                             // Open the plugin by creating a window and providing that handle to the plugin's renderer.

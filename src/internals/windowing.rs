@@ -29,7 +29,7 @@ unsafe extern "system" fn wnd_proc(
                 (state.on_close)();
 
                 // Save the current state of the plugin when closing the window
-                *state.state_handle.write() = state.plugin_handle.save_state();
+                *state.state_handle.write() = state.plugin_instance.save_state();
             }
             let _ = unsafe { DestroyWindow(hwnd) };
             LRESULT(0)

@@ -157,18 +157,11 @@ fn apply_effects(
                         // Output and input nodes do not do anything
                         crate::ui::fx_map::NodeType::In | crate::ui::fx_map::NodeType::Out => (),
                         // Apply the effect from the external plugin, apply it appropirately to the effect type.
-                        crate::ui::fx_map::NodeType::ExternalPlugin { path, state: _ } => {
-                            let active_plugins = &plugin_manager.read().loaded_plugins;
-                            let plugin = active_plugins.get_key1(path);
+                        crate::ui::fx_map::NodeType::ExternalPlugin { plugin_instance, .. } => {
+                            let aeffect = plugin_instance.plugin_handler_ptr as *mut AEffect;
 
-                            // Get the plugin from the loaded plugins
-                            if let Some(plugin) = plugin {
-                                let raw_aeffect = plugin.plugin_handle_ptr as *mut AEffect;
-                                let _aeffect = unsafe { raw_aeffect.read() };
-
-                                // Apply effects
-                                // (aeffect.processReplacing)(raw_aeffect, );
-                            }
+                            // Apply effects
+                            // (aeffect.processReplacing)(raw_aeffect, );
                         }
                         crate::ui::fx_map::NodeType::InternalCustom(_plugin_node_properties) => {}
                     }

@@ -39,7 +39,7 @@ pub extern "C" fn host_callback(
             // This opcode is called when the vst2 plugin is modified via its ui.
             AudioMasterOpcode::Automate => {
                 // Store the parameter change along with which plugin was called
-                PARAMETER_CHANNEL.0.send(Parameter {
+                let _ = PARAMETER_CHANNEL.0.send(Parameter {
                     plugin_pointer: effect as usize,
                     index,
                     value: opt,

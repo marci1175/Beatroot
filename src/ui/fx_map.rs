@@ -8,6 +8,8 @@ use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
 use parking_lot::RwLock;
 use strum::{EnumCount, VariantArray};
 
+use crate::plugins::PluginInstance;
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy)]
 /// The attributes of an object in the Ui.
 pub struct UiAttributes {
@@ -132,6 +134,8 @@ fn create_connection([a, b]: [ConnectorID; 2]) -> [ConnectorID; 2] {
 pub struct PluginNodeProperties {}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// The variant of the node in the nodemap.
+/// Every pre defined node type has special behavior attributed to it.
 pub enum NodeType {
     /// Main sample in.
     /// This is where the (resampled) original samples flow into the map.
@@ -144,7 +148,7 @@ pub enum NodeType {
     /// Plugin node.
     /// This node manages the underlying VST plugin's effects on the samples in the effects chain.
     ExternalPlugin {
-        path: PathBuf,
+        plugin_instance: PluginInstance,
         state: Arc<RwLock<Vec<u8>>>,
     },
 
@@ -503,7 +507,7 @@ impl NodeMap {
                     match &node.node_type {
                         NodeType::In => "Input".to_string(),
                         NodeType::Out => "Output".to_string(),
-                        NodeType::ExternalPlugin { path, .. } => path.to_string_lossy().to_string(),
+                        NodeType::ExternalPlugin { plugin_instance, .. } => plugin_instance.info,
                         NodeType::InternalCustom(_) => "Built-in".to_string(),
                     },
                     egui::FontId::proportional(10.0 * self.ui_attributes.scale),
