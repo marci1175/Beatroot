@@ -36,7 +36,7 @@ pub struct NodeMap {
 
     #[serde(skip)]
     /// This is only used for visual feedback to the user.
-    /// THe actual playback thread requests its own data at media creation time.
+    /// The actual playback thread requests its own data at media creation time.
     latest_effect_chain: Option<anyhow::Result<Vec<usize>>>,
 
     /// The attributes of this [`NodeMap`] in the Ui.
@@ -221,6 +221,10 @@ impl Node {
 
     pub fn node_type(&self) -> &NodeType {
         &self.node_type
+    }
+
+    pub fn node_type_mut(&mut self) -> &mut NodeType {
+        &mut self.node_type
     }
 }
 
@@ -510,12 +514,7 @@ impl NodeMap {
                             Err(err) => {
                                 error_present = true;
 
-                                format!(
-                                    r#"{}{}"{}""#,
-                                    err,
-                                    '\n',
-                                    plugin_descriptor.path.display()
-                                )
+                                format!(r#"{}{}"{}""#, err, '\n', plugin_descriptor.path.display())
                             }
                         },
                         NodeType::InternalCustom(_) => "Built-in".to_string(),
@@ -598,7 +597,15 @@ impl NodeMap {
                     // Display information if hovered
                     node_response.on_hover_text("This is the main `Out` node. This is the end point of the samples' pipleline in the effects chain. The information that enters this node gets sent to the mixer.");
                 }
-                NodeType::ExternalPlugin { .. } => {}
+                NodeType::ExternalPlugin {
+                    plugin_descriptor, ..
+                } => {
+                    node_response.on_hover_text(format!(
+                        "{} | Path: {}",
+                        plugin_descriptor.plugin_type,
+                        plugin_descriptor.path.display()
+                    ));
+                }
                 NodeType::InternalCustom(_props) => {
                     // Create the connectors for a node with any number of connectors
                 }
@@ -765,7 +772,7 @@ impl NodeMap {
         &mut self,
         // This id is what the moved node will take up.
         id: usize,
-    ) {
+    ) -> Node {
         // The current last node's id.
         // The node with this id is going to be swapped to the node thats going to be removed.
         // We need to update the connections to point to its new address.
@@ -773,7 +780,7 @@ impl NodeMap {
 
         // Remove the node from the Nodes list
         // DISCLAIMER: Do not change the method of removal as this function only works with swap remove.
-        self.nodes.swap_remove(id);
+        let node = self.nodes.swap_remove(id);
 
         // Remove every connection which contains this node that was removed.
         self.node_connections
@@ -814,8 +821,11 @@ impl NodeMap {
         // Reinsert the updated connections
         self.node_connections.extend(updated_connections);
 
-        // Update latest effect chain
+        // Update latest effect chain so that it will display correctly once again
         self.latest_effect_chain = Some(self.create_effect_sequence());
+
+        // Return removed node
+        node
     }
 
     pub fn nodes(&self) -> &[Node] {
@@ -828,6 +838,10 @@ impl NodeMap {
 
     pub fn push_node(&mut self, value: Node) {
         self.nodes.push(value)
+    }
+
+    pub fn nodes_mut(&mut self) -> &mut Vec<Node> {
+        &mut self.nodes
     }
 }
 

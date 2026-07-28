@@ -647,11 +647,11 @@ fn render_samples(
                                         ui.menu_button("Plugins", |ui| {
                                             ui.menu_button("Builtin", |_ui| {});
                                             ui.menu_button("External", |ui| {
-                                                for (path, plugin_handle) in global_state
-                                                    .plugin_manager
-                                                    .read()
-                                                    .loaded_plugins
-                                                    .iter()
+                                                let mut plugin_manager =
+                                                    global_state.plugin_manager.write();
+
+                                                for (path, plugin_handle) in
+                                                    plugin_manager.loaded_plugins.clone().iter()
                                                 {
                                                     if ui
                                                         .button(
@@ -661,18 +661,35 @@ fn render_samples(
                                                         )
                                                         .clicked()
                                                     {
+                                                        // Create an instance of the plugin
+                                                        let plugin_instance =
+                                                            plugin_handle.create_instance();
+
+                                                        // Create the plugin's state buffer
+                                                        let state = Arc::new(RwLock::new(
+                                                            plugin_handle
+                                                                .startup_memory_snapshot
+                                                                .clone(),
+                                                        ));
+
+                                                        // Store the plugin's state buffer and instance ptr in a separate hashmap too for quick access on the state writer thread.
+                                                        // We mustnt forget to update this list if any nodes or plugins get removed to avoid taking up too much memory.
+                                                        plugin_manager.plugin_states.insert(
+                                                            plugin_instance.plugin_instance_ptr
+                                                                as usize,
+                                                            (
+                                                                plugin_instance.plugin_type,
+                                                                state.clone(),
+                                                            ),
+                                                        );
+
                                                         // Create a node based on the plugin we added.
                                                         fx_map.push_node(Node::new(
                                                             NodeType::ExternalPlugin {
-                                                                state: Arc::new(RwLock::new(
-                                                                    plugin_handle
-                                                                        .startup_memory_snapshot
-                                                                        .clone(),
-                                                                )),
+                                                                state,
                                                                 plugin_instance:
                                                                     InstanceResult::new(
-                                                                        plugin_handle
-                                                                            .create_instance(),
+                                                                        plugin_instance,
                                                                     ),
                                                                 plugin_descriptor:
                                                                     PluginDescriptor {
@@ -701,10 +718,32 @@ fn render_samples(
                                                 && ui.button("Remove").clicked()
                                             {
                                                 // Remove the node and its connections from the map
-                                                fx_map.remove_node(node_id);
+                                                let node = fx_map.remove_node(node_id);
 
                                                 // Reset selected node id
                                                 fx_map.currently_selected_node_id = None;
+
+                                                match node.node_type() {
+                                                    // This is unreachable
+                                                    NodeType::In | NodeType::Out => (),
+                                                    // Remove the plugin's fastpath from the states
+                                                    NodeType::ExternalPlugin {
+                                                        plugin_instance,
+                                                        plugin_descriptor,
+                                                        state,
+                                                    } => {
+                                                        // Close the plugin when removed
+                                                        if let Ok(inst) = plugin_instance.get() {
+                                                            display_error_as_toast(inst.close(), ToastStyle::default(), this.toasts.clone());
+
+                                                            // Remove from state fastpath
+                                                            global_state.plugin_manager.write().plugin_states.remove(&(inst.plugin_instance_ptr as usize));
+                                                        }
+                                                    }
+                                                    NodeType::InternalCustom(
+                                                        plugin_node_properties,
+                                                    ) => todo!(),
+                                                }
                                             }
 
                                             match node.node_type() {

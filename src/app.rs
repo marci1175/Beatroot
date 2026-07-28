@@ -12,7 +12,7 @@ use crate::{
         playback::{FXMap, HostInformation, MasterPlaybackThread},
     },
     internals::{endpoint::check_for_update, utils::ExactLengthBuffer},
-    plugins::{PluginManager, create_plugin_state_writer},
+    plugins::{PluginManager, create_plugin_state_writer, initialize_fxmap_nodes},
     project_manager::open_project,
     ui::{
         panels::lib::{GlobalState, Panel, PanelStates, create_panels},
@@ -155,6 +155,13 @@ impl AppRoot {
 
         // Initalize plugins at startup
         app_ctx.application.plugin_manager.write().init();
+
+        // Initalize FXMap nodes
+        // Plugin instances are initalized at startup
+        initialize_fxmap_nodes(
+            app_ctx.application.plugin_manager.clone(),
+            app_ctx.application.fx_map.clone(),
+        );
 
         // Spawn the thread responsible for writing the changes made in the plugins to the nodes
         // NOTICE: This should never panic as there is no way currently to recover this.

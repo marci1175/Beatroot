@@ -1,4 +1,4 @@
-use std::os::raw::c_void;
+use std::{os::raw::c_void, sync::Arc};
 
 use windows::{
     Win32::{Foundation::*, System::LibraryLoader::GetModuleHandleW, UI::WindowsAndMessaging::*},
@@ -28,8 +28,10 @@ unsafe extern "system" fn wnd_proc(
                 // Call the `on_close` callback of the window
                 (state.on_close)();
 
-                // Save the current state of the plugin when closing the window
-                *state.state_handle.write() = state.plugin_instance.save_state();
+                // Save the current state of the plugin when closing the window if the plugin is still valid
+                if let Ok(plugin_state) = state.plugin_instance.save_state() {
+                    *state.state_handle.write() = plugin_state;
+                }
             }
             let _ = unsafe { DestroyWindow(hwnd) };
             LRESULT(0)

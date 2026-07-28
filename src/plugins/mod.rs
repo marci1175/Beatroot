@@ -1,9 +1,5 @@
 use std::{
-    any,
-    collections::HashMap,
-    ffi::c_void,
-    path::PathBuf,
-    sync::{Arc, LazyLock},
+    any, collections::HashMap, ffi::c_void, path::PathBuf, sync::{Arc, LazyLock, atomic::AtomicBool}, time::Duration,
 };
 
 use ::vst::api::{AEffect, PluginMain};
@@ -25,9 +21,7 @@ use crate::{
     },
     plugins::{
         api::vst2::{AEffectOpcode, ERect, VstOpcode, get_plugin_name, get_vendor_name},
-        vst2::{
-            host_callback, restore_state, save_state, set_parameter,
-        },
+        vst2::{PARAMETER_CHANNEL, host_callback, restore_state, save_state, set_parameter},
     },
     ui::fx_map::NodeMap,
 };
@@ -142,6 +136,7 @@ impl PluginHandle {
                     plugin_type: self.plugin_type,
                     displayed_window_information: Arc::new(Mutex::new(None)),
                     info: self.info.clone(),
+                    is_invalid: Arc::new(AtomicBool::new(false))
                 }
             }
             PluginType::Vst3 => todo!(),
@@ -185,7 +180,7 @@ pub struct PluginInstance {
 
     ///
     /// The window's handle and the node which was used to open it up if the plugin is being displayed.
-    /// This is used to prevent opening up multiple windows to the same plugin and as handle to the window we need to destroy when removing the plugin.
+    /// This is used to prevent opening up multiple windows to the same plugin instance and as handle to the window we need to destroy when removing the plugin.
     ///
     /// This also provides information to the host to know which sample's node's state to modify.
     ///
@@ -193,10 +188,32 @@ pub struct PluginInstance {
 
     /// Information about the plugin itself. (This is created cloned from the plugin handle.)
     pub info: Arc<PluginInformation>,
+
+    /// This field contains whether this plugin instance has been deallocated / deleted.
+    /// This is extremely important to check in multithreaded contexts where any reading / writing through the plugin handler pointer might occur.
+    /// If an instance has been flagged as invalid it will not longer read or save the state of the plugin.
+    pub is_invalid: Arc<AtomicBool>,
 }
 
 impl PluginInstance {
-    pub fn load_state(&self, state: &[u8]) {
+    pub fn load_state(&self, state: &[u8]) -> anyhow::Result<()> {
+        // Check if the instance is valid
+        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) { return Err(anyhow!("Failed to load state of plugin as it was flagged as invalid.")) };
+
+        Ok(match self.plugin_type {
+            PluginType::Vst2 => unsafe {
+                restore_state(self.plugin_instance_ptr as *mut _, state);
+            },
+            PluginType::Vst3 => todo!(),
+            PluginType::Clap => todo!(),
+            PluginType::Lua => todo!(),
+        })
+    }
+
+    pub fn with_state(self, state: &[u8]) -> Self {
+        // Check if the instance is valid
+        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) { panic!("Failed to crate PluginInstance with state as the PluginInstance was invalid.") };
+
         match self.plugin_type {
             PluginType::Vst2 => unsafe {
                 restore_state(self.plugin_instance_ptr as *mut _, state);
@@ -205,22 +222,30 @@ impl PluginInstance {
             PluginType::Clap => todo!(),
             PluginType::Lua => todo!(),
         }
+
+        self
     }
 
-    pub fn save_state(&self) -> Vec<u8> {
-        match self.plugin_type {
+    pub fn save_state(&self) -> anyhow::Result<Vec<u8>> {
+        // Check if the instance is valid
+        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) { return Err(anyhow!("Failed to save state of plugin as it was flagged as invalid.")) };
+
+        Ok(match self.plugin_type {
             PluginType::Vst2 => unsafe { save_state(self.plugin_instance_ptr as *mut _) },
             PluginType::Vst3 => todo!(),
             PluginType::Clap => todo!(),
             PluginType::Lua => todo!(),
-        }
+        })
     }
 
-    pub fn change_paramter(
+    pub fn change_parameter(
         &self,
         param_index: usize,
         value: Box<dyn any::Any>,
     ) -> anyhow::Result<()> {
+        // Check if the instance is valid
+        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) { return Err(anyhow!("Failed to change parameter of plugin as it was flagged as invalid.")) };
+
         match self.plugin_type {
             PluginType::Vst2 => {
                 unsafe {
@@ -241,12 +266,19 @@ impl PluginInstance {
         Ok(())
     }
 
-    /// Closes the plugin's window.
+    /// 
+    /// Closes the plugin's window and deallocated this instance of the plugin.
     /// This does not free the library in order to deallocate the whole library, [`PluginHandle::destroy()`] should be called instead.
+    /// 
     pub fn close(&self) -> anyhow::Result<()> {
+        // Check if the instance is valid, and change state to invalid
+        if self.is_invalid.fetch_not(std::sync::atomic::Ordering::Relaxed) { return Err(anyhow!("Failed to close plugin as it was flagged as invalid.")) };
+
         // Close based on plugin type.
         match self.plugin_type {
             PluginType::Vst2 => {
+                // Signal the plugin instance to close
+
                 let effect = self.plugin_instance_ptr as *mut AEffect;
                 let dispatcher = unsafe { effect.read() }.dispatcher;
 
@@ -300,6 +332,9 @@ impl PluginInstance {
         node_id: usize,
         sample_id: usize,
     ) -> anyhow::Result<()> {
+        // Check if the instance is valid
+        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) { return Err(anyhow!("Failed to open plugin as it was flagged as invalid.")) };
+
         // Clone the window handle so that it can be modified from the other thread
         let window_info = self.displayed_window_information.clone();
 
@@ -407,6 +442,10 @@ impl PluginInstance {
 pub struct InstanceResult(Result<PluginInstance, PluginInstanceStatus>);
 
 impl InstanceResult {
+    pub fn new_raw(plugin_instance: Result<PluginInstance, PluginInstanceStatus>) -> Self {
+        Self(plugin_instance)
+    }
+
     pub fn get(&self) -> Result<&PluginInstance, &PluginInstanceStatus> {
         self.0.as_ref()
     }
@@ -480,6 +519,8 @@ pub struct PluginManager {
     #[serde(skip)]
     /// This field should get reinitalized at every startup since the libraries are dynamically resolved.
     pub loaded_plugins: HashMap<PathBuf, PluginHandle>,
+
+    pub plugin_states: HashMap<usize, (PluginType, Arc<RwLock<Vec<u8>>>)>,
 }
 
 impl PluginManager {
@@ -592,8 +633,8 @@ impl PluginManager {
 }
 
 pub fn create_plugin_state_writer(
-    _plugin_manager: Arc<RwLock<PluginManager>>,
-    _fx_map: Arc<DashMap<usize, NodeMap>>,
+    plugin_manager: Arc<RwLock<PluginManager>>,
+    fx_map: Arc<DashMap<usize, NodeMap>>,
 ) {
     // std::thread::spawn(move || {
     //     loop {
@@ -655,4 +696,42 @@ pub fn create_plugin_state_writer(
     //         }
     //     }
     // });
+}
+
+///
+/// Iterates over all of the samples' effect nodes and initalizes them with their stored state.
+///  
+pub fn initialize_fxmap_nodes(
+    plugins: Arc<RwLock<PluginManager>>,
+    fx_map: Arc<DashMap<usize, NodeMap>>,
+) {
+    // Iter over all sample fx
+    for mut nodes in fx_map.iter_mut() {
+        // Iter over all nodes
+        for node in nodes.nodes_mut() {
+            // Update nodes
+            match node.node_type_mut() {
+                // We dont have to init anything for these fixed nodes
+                crate::ui::fx_map::NodeType::In | crate::ui::fx_map::NodeType::Out => (),
+                crate::ui::fx_map::NodeType::ExternalPlugin {
+                    plugin_instance,
+                    plugin_descriptor,
+                    state,
+                } => {
+                    // Initialize a new plugin instance for the node
+                    *plugin_instance = InstanceResult::new_raw(
+                        plugins
+                            .read()
+                            .loaded_plugins
+                            .get(&plugin_descriptor.path)
+                            .map_or_else(
+                                || Err(PluginInstanceStatus::NotFound),
+                                |handle| Ok(handle.create_instance().with_state(&state.read())),
+                            ),
+                    );
+                }
+                crate::ui::fx_map::NodeType::InternalCustom(_plugin_node_properties) => todo!(),
+            }
+        }
+    }
 }

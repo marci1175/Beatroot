@@ -14,7 +14,7 @@ pub static PARAMETER_CHANNEL: LazyLock<(Sender<Parameter>, Receiver<Parameter>)>
 #[derive(Debug, Clone, Copy)]
 pub struct Parameter {
     /// The pointer to the plugin's handler
-    /// The underlying type may change from plugin to plugin.
+    /// The underlying type may change from plugin type to plugin type.
     pub plugin_pointer: usize,
 
     /// The index of the parameter.
