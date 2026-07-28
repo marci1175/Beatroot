@@ -734,10 +734,21 @@ fn render_samples(
                                                     } => {
                                                         // Close the plugin when removed
                                                         if let Ok(inst) = plugin_instance.get() {
-                                                            display_error_as_toast(inst.close(), ToastStyle::default(), this.toasts.clone());
+                                                            display_error_as_toast(
+                                                                inst.close(),
+                                                                ToastStyle::default(),
+                                                                this.toasts.clone(),
+                                                            );
 
                                                             // Remove from state fastpath
-                                                            global_state.plugin_manager.write().plugin_states.remove(&(inst.plugin_instance_ptr as usize));
+                                                            global_state
+                                                                .plugin_manager
+                                                                .write()
+                                                                .plugin_states
+                                                                .remove(
+                                                                    &(inst.plugin_instance_ptr
+                                                                        as usize),
+                                                                );
                                                         }
                                                     }
                                                     NodeType::InternalCustom(

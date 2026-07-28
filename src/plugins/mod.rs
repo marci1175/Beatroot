@@ -1,5 +1,10 @@
 use std::{
-    any, collections::HashMap, ffi::c_void, path::PathBuf, sync::{Arc, LazyLock, atomic::AtomicBool}, time::Duration,
+    any,
+    collections::HashMap,
+    ffi::c_void,
+    path::PathBuf,
+    sync::{Arc, LazyLock, atomic::AtomicBool},
+    time::Duration,
 };
 
 use ::vst::api::{AEffect, PluginMain};
@@ -18,12 +23,9 @@ use crate::{
         library::{get_fn_addr, load_library},
         mem::str_to_pcwstr,
         windowing::{PluginWindowInformation, create_window, register_class},
-    },
-    plugins::{
-        api::vst2::{AEffectOpcode, ERect, VstOpcode, get_plugin_name, get_vendor_name},
-        vst2::{PARAMETER_CHANNEL, host_callback, restore_state, save_state, set_parameter},
-    },
-    ui::fx_map::NodeMap,
+    }, plugins::{
+        api::vst2::{AEffectOpcode, ERect, VstOpcode, get_plugin_name, get_vendor_name}, vst2::{PARAMETER_CHANNEL, host_callback, restore_state, save_state, set_parameter, set_parameter_in_state},
+    }, ui::fx_map::NodeMap,
 };
 
 pub mod api;
@@ -136,7 +138,7 @@ impl PluginHandle {
                     plugin_type: self.plugin_type,
                     displayed_window_information: Arc::new(Mutex::new(None)),
                     info: self.info.clone(),
-                    is_invalid: Arc::new(AtomicBool::new(false))
+                    is_invalid: Arc::new(AtomicBool::new(false)),
                 }
             }
             PluginType::Vst3 => todo!(),
@@ -198,7 +200,11 @@ pub struct PluginInstance {
 impl PluginInstance {
     pub fn load_state(&self, state: &[u8]) -> anyhow::Result<()> {
         // Check if the instance is valid
-        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) { return Err(anyhow!("Failed to load state of plugin as it was flagged as invalid.")) };
+        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(anyhow!(
+                "Failed to load state of plugin as it was flagged as invalid."
+            ));
+        };
 
         Ok(match self.plugin_type {
             PluginType::Vst2 => unsafe {
@@ -212,7 +218,9 @@ impl PluginInstance {
 
     pub fn with_state(self, state: &[u8]) -> Self {
         // Check if the instance is valid
-        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) { panic!("Failed to crate PluginInstance with state as the PluginInstance was invalid.") };
+        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) {
+            panic!("Failed to crate PluginInstance with state as the PluginInstance was invalid.")
+        };
 
         match self.plugin_type {
             PluginType::Vst2 => unsafe {
@@ -228,7 +236,11 @@ impl PluginInstance {
 
     pub fn save_state(&self) -> anyhow::Result<Vec<u8>> {
         // Check if the instance is valid
-        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) { return Err(anyhow!("Failed to save state of plugin as it was flagged as invalid.")) };
+        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(anyhow!(
+                "Failed to save state of plugin as it was flagged as invalid."
+            ));
+        };
 
         Ok(match self.plugin_type {
             PluginType::Vst2 => unsafe { save_state(self.plugin_instance_ptr as *mut _) },
@@ -244,7 +256,11 @@ impl PluginInstance {
         value: Box<dyn any::Any>,
     ) -> anyhow::Result<()> {
         // Check if the instance is valid
-        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) { return Err(anyhow!("Failed to change parameter of plugin as it was flagged as invalid.")) };
+        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(anyhow!(
+                "Failed to change parameter of plugin as it was flagged as invalid."
+            ));
+        };
 
         match self.plugin_type {
             PluginType::Vst2 => {
@@ -266,13 +282,20 @@ impl PluginInstance {
         Ok(())
     }
 
-    /// 
+    ///
     /// Closes the plugin's window and deallocated this instance of the plugin.
     /// This does not free the library in order to deallocate the whole library, [`PluginHandle::destroy()`] should be called instead.
-    /// 
+    ///
     pub fn close(&self) -> anyhow::Result<()> {
         // Check if the instance is valid, and change state to invalid
-        if self.is_invalid.fetch_not(std::sync::atomic::Ordering::Relaxed) { return Err(anyhow!("Failed to close plugin as it was flagged as invalid.")) };
+        if self
+            .is_invalid
+            .fetch_not(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err(anyhow!(
+                "Failed to close plugin as it was flagged as invalid."
+            ));
+        };
 
         // Close based on plugin type.
         match self.plugin_type {
@@ -333,7 +356,11 @@ impl PluginInstance {
         sample_id: usize,
     ) -> anyhow::Result<()> {
         // Check if the instance is valid
-        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) { return Err(anyhow!("Failed to open plugin as it was flagged as invalid.")) };
+        if self.is_invalid.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(anyhow!(
+                "Failed to open plugin as it was flagged as invalid."
+            ));
+        };
 
         // Clone the window handle so that it can be modified from the other thread
         let window_info = self.displayed_window_information.clone();
@@ -634,68 +661,35 @@ impl PluginManager {
 
 pub fn create_plugin_state_writer(
     plugin_manager: Arc<RwLock<PluginManager>>,
-    fx_map: Arc<DashMap<usize, NodeMap>>,
 ) {
-    // std::thread::spawn(move || {
-    //     loop {
-    //         // Update stored plugin states when the plugin is modified.
-    //         // Do not block waiting for a plugin to write into the queue while the mutex is locked.
-    //         if let Ok(param) = PARAMETER_CHANNEL.1.recv() {
-    //             // Check which plugin pushed to the parameter queue
-    //             if let Some(handle) = plugin_manager
-    //                 .read()
-    //                 .loaded_plugins
-    //                 .get_key2(&param.plugin_pointer)
-    //             {
-    //                 // Check if the plugin that inserted in the parameter queue is open, and what information was it provided with.
-    //                 // This way we will know what node opened the window from the plugin window information.
-    //                 if let Some(Some(window_information)) = handle
-    //                     .displayed_window_information
-    //                     .try_lock_for(Duration::from_secs(2))
-    //                     .as_deref()
-    //                 {
-    //                     // This is the node which was representing the plugin which was modified
-    //                     let modified_node =
-    //                         fx_map
-    //                             .get(&window_information.sample_id)
-    //                             .and_then(|nodemap| {
-    //                                 nodemap.nodes().get(window_information.node_id).cloned()
-    //                             });
+    std::thread::spawn(move || {
+        loop {
+            // Update stored plugin states when the plugin is modified.
+            // Do not block waiting for a plugin to write into the queue while the mutex is locked.
+            if let Ok(param) = PARAMETER_CHANNEL.1.recv() {
+                // Check which plugin pushed to the parameter queue
+                if let Some((plugin_type, state)) = plugin_manager
+                    .read()
+                    .plugin_states
+                    .get(&param.plugin_pointer)
+                {
+                    // Get the plugin's type
+                    match plugin_type {
+                        crate::plugins::PluginType::Vst2 => {
+                            // Get the locally stored plugin state
+                            let plugin_state = &mut *state.write();
 
-    //                     if let Some(node) = modified_node {
-    //                         // Modify the locally stored state based on the plugin type
-    //                         match node.node_type() {
-    //                             crate::ui::fx_map::NodeType::In
-    //                             | crate::ui::fx_map::NodeType::Out => (),
-    //                             crate::ui::fx_map::NodeType::ExternalPlugin { state, .. } => {
-    //                                 // Get the plugin's type
-    //                                 match handle.plugin_type {
-    //                                     crate::plugins::PluginType::Vst2 => {
-    //                                         // Get the locally stored plugin state
-    //                                         let plugin_state = &mut *state.write();
-
-    //                                         // Set the parameter's state inside the locally stored parameter buffer.
-    //                                         set_parameter_in_state(
-    //                                             plugin_state,
-    //                                             param.index as usize,
-    //                                             param.value,
-    //                                         );
-    //                                     }
-    //                                     crate::plugins::PluginType::Vst3 => todo!(),
-    //                                     crate::plugins::PluginType::Clap => todo!(),
-    //                                     crate::plugins::PluginType::Lua => todo!(),
-    //                                 }
-    //                             }
-    //                             crate::ui::fx_map::NodeType::InternalCustom(
-    //                                 _plugin_node_properties,
-    //                             ) => todo!(),
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-    // });
+                            // Set the parameter's state inside the locally stored parameter buffer.
+                            set_parameter_in_state(plugin_state, param.index as usize, param.value);
+                        }
+                        crate::plugins::PluginType::Vst3 => todo!(),
+                        crate::plugins::PluginType::Clap => todo!(),
+                        crate::plugins::PluginType::Lua => todo!(),
+                    }
+                }
+            }
+        }
+    });
 }
 
 ///

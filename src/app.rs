@@ -167,7 +167,6 @@ impl AppRoot {
         // NOTICE: This should never panic as there is no way currently to recover this.
         create_plugin_state_writer(
             app_ctx.application.plugin_manager.clone(),
-            app_ctx.application.fx_map.clone(),
         );
 
         app_ctx
