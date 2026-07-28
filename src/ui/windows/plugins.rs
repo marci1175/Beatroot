@@ -180,7 +180,7 @@ pub fn display_plugins_window(
                                     // If a plugin was removed this is a Some.
                                     let mut removed_plugin: Option<PathBuf> = None;
 
-                                    for (path, _, handle) in plugin_manager.loaded_plugins.iter() {
+                                    for (path, _handle) in plugin_manager.loaded_plugins.iter() {
                                         ui.horizontal(|ui| {
                                             // Show the name of the plugin
                                             ui.label(
@@ -193,20 +193,25 @@ pub fn display_plugins_window(
                                             if ui.button("Unload and Remove").clicked() {
                                                 // Do not reload this plugin at startup
                                                 removed_plugin = Some(path.clone());
-
-                                                // Try to free the library and display if any error occured
-                                                display_error_as_toast(
-                                                    handle.destroy(),
-                                                    ToastStyle::default(),
-                                                    global_state.toasts.clone(),
-                                                );
                                             }
                                         });
                                     }
 
                                     // If a plugin has been stored as removed remove it from the application too so that its not reloaded at startup.
                                     if let Some(path) = removed_plugin {
-                                        plugin_manager.loaded_plugins.remove_key1(&path);
+                                        // Remove the plugin from the runtime.
+                                        if let Some(handle) =
+                                            plugin_manager.loaded_plugins.remove(&path)
+                                        {
+                                            // Try to free the library and display if any error occured
+                                            display_error_as_toast(
+                                                handle.destroy(),
+                                                ToastStyle::default(),
+                                                global_state.toasts.clone(),
+                                            );
+                                        };
+
+                                        // Remove the plugin from the auto-load plugin list.
                                         plugin_manager.plugin_loaders.swap_remove(&path);
                                     }
                                 });

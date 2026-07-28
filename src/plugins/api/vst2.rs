@@ -1,6 +1,7 @@
 use std::os::raw::{c_char, c_void};
 
 use num_enum::TryFromPrimitive;
+use vst::api::AEffect;
 
 // ===================================================================
 // Base integer types
@@ -19,106 +20,6 @@ pub const K_VST_VERSION: VstInt32 = 2400;
 /// ('V'<<24)|('s'<<16)|('t'<<8)|'P')
 pub const K_EFFECT_MAGIC: VstInt32 = 0x56737450; // 'V','s','t','P'
 pub const K_EFFECT_IDENTIFY: VstInt32 = 0x4E764566; // 'N','v','E','f'
-
-// ===================================================================
-// Function pointer typedefs
-// ===================================================================
-
-pub type AudioMasterCallback = unsafe extern "system" fn(
-    effect: *mut AEffect,
-    opcode: VstInt32,
-    index: VstInt32,
-    value: VstIntPtr,
-    ptr: *mut c_void,
-    opt: f32,
-) -> VstIntPtr;
-
-pub type AEffectDispatcherProc = unsafe extern "system" fn(
-    effect: *mut AEffect,
-    opcode: VstInt32,
-    index: VstInt32,
-    value: VstIntPtr,
-    ptr: *mut c_void,
-    opt: f32,
-) -> VstIntPtr;
-
-pub type AEffectProcessProc = unsafe extern "system" fn(
-    effect: *mut AEffect,
-    inputs: *mut *mut f32,
-    outputs: *mut *mut f32,
-    sample_frames: VstInt32,
-);
-
-pub type AEffectProcessDoubleProc = unsafe extern "system" fn(
-    effect: *mut AEffect,
-    inputs: *mut *mut f64,
-    outputs: *mut *mut f64,
-    sample_frames: VstInt32,
-);
-
-pub type AEffectSetParameterProc =
-    unsafe extern "system" fn(effect: *mut AEffect, index: VstInt32, parameter: f32);
-
-pub type AEffectGetParameterProc =
-    unsafe extern "system" fn(effect: *mut AEffect, index: VstInt32) -> f32;
-
-pub type VstPluginMainProc =
-    unsafe extern "system" fn(audio_master: AudioMasterCallback) -> *mut AEffect;
-
-// ===================================================================
-// AEffect - the core plugin interface struct
-// Field order matches vst2.h exactly (lines ~2275-2415). Do not reorder.
-// ===================================================================
-
-#[repr(C)]
-pub struct AEffect {
-    /// Must equal K_EFFECT_MAGIC ('VstP')
-    pub magic: VstInt32,
-    /// Host-to-plugin event dispatcher
-    pub dispatcher: AEffectDispatcherProc,
-    /// Deprecated since VST 2.4 - accumulating process mode
-    pub process: AEffectProcessProc,
-    /// Set an automatable parameter, value in [0.0, 1.0]
-    pub set_parameter: AEffectSetParameterProc,
-    /// Get an automatable parameter, returns value in [0.0, 1.0]
-    pub get_parameter: AEffectGetParameterProc,
-    /// Number of programs
-    pub num_programs: VstInt32,
-    /// Number of parameters (same across all programs)
-    pub num_params: VstInt32,
-    /// Number of audio inputs
-    pub num_inputs: VstInt32,
-    /// Number of audio outputs
-    pub num_outputs: VstInt32,
-    /// See VstAEffectFlags below
-    pub flags: VstInt32,
-    /// Reserved for host, should be zeroed
-    pub __pad1: VstIntPtr,
-    /// Reserved for host, should be zeroed
-    pub __pad2: VstIntPtr,
-    /// Latency introduced by plugin, in samples
-    pub initial_delay: VstInt32,
-    /// Deprecated/unused
-    pub real_qualities: VstInt32,
-    /// Deprecated/unused
-    pub off_qualities: VstInt32,
-    /// Deprecated/unused
-    pub io_ratio: f32,
-    /// Pointer to wrapper object (host-defined, opaque to plugin)
-    pub object: *mut c_void,
-    /// User-defined pointer - common place to stash per-instance host state
-    pub user: *mut c_void,
-    /// Unique plugin identifier
-    pub unique_id: VstInt32,
-    /// Plugin version, e.g. 1.1.0.0 encoded as 1100
-    pub version: VstInt32,
-    /// Main audio processing method (replacing mode, single precision)
-    pub process_replacing: AEffectProcessProc,
-    /// Same as process_replacing but double precision (VST 2.4+)
-    pub process_double_replacing: AEffectProcessDoubleProc,
-    /// Reserved for future use, should be zeroed
-    pub reserved: [u8; 56],
-}
 
 /// VstAEffectFlags - bits in AEffect.flags
 #[repr(i32)]
@@ -602,4 +503,38 @@ impl From<VstOpcode> for i32 {
     }
 }
 
-pub const VSTNAMEMAXLEN: usize = 32;
+const EFF_GET_EFFECT_NAME: i32 = 45;
+const EFF_GET_VENDOR_STRING: i32 = 47;
+const EFF_GET_PRODUCT_STRING: i32 = 48;
+
+/// SAFETY: `effect` must point to a valid, live AEffect for the duration of this call.
+unsafe fn get_vst2_string(effect: *mut AEffect, opcode: i32, buf_len: usize) -> String {
+    let mut buf: Vec<u8> = vec![0u8; buf_len];
+
+    let dispatcher = (unsafe { &*effect }).dispatcher;
+    dispatcher(
+        effect,
+        opcode,
+        0,
+        0,
+        buf.as_mut_ptr() as *mut std::ffi::c_void,
+        0.0,
+    );
+
+    // Find the null terminator; plugins are supposed to null-terminate,
+    // but don't trust length blindly.
+    let nul_pos = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    String::from_utf8_lossy(&buf[..nul_pos]).into_owned()
+}
+
+pub unsafe fn get_plugin_name(effect: *mut AEffect) -> String {
+    unsafe { get_vst2_string(effect, EFF_GET_EFFECT_NAME, 32 + 1) } // spec says 32, +1 for safety/nul
+}
+
+pub unsafe fn get_vendor_name(effect: *mut AEffect) -> String {
+    unsafe { get_vst2_string(effect, EFF_GET_VENDOR_STRING, 64 + 1) }
+}
+
+pub unsafe fn get_product_name(effect: *mut AEffect) -> String {
+    unsafe { get_vst2_string(effect, EFF_GET_PRODUCT_STRING, 64 + 1) }
+}

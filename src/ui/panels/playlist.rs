@@ -12,6 +12,7 @@ use crate::{
         sample::{SampleProperties, generate_sample_waveform},
         utils::find_value_inbetween,
     },
+    plugins::{InstanceResult, PluginDescriptor},
     ui::{
         fx_map::{Node, NodeMap, NodeType},
         panels::{
@@ -663,12 +664,23 @@ fn render_samples(
                                                         // Create a node based on the plugin we added.
                                                         fx_map.push_node(Node::new(
                                                             NodeType::ExternalPlugin {
-                                                                path: path.clone(),
                                                                 state: Arc::new(RwLock::new(
                                                                     plugin_handle
                                                                         .startup_memory_snapshot
                                                                         .clone(),
                                                                 )),
+                                                                plugin_instance:
+                                                                    InstanceResult::new(
+                                                                        plugin_handle
+                                                                            .create_instance(),
+                                                                    ),
+                                                                plugin_descriptor:
+                                                                    PluginDescriptor {
+                                                                        path: path.clone(),
+                                                                        plugin_type: plugin_handle
+                                                                            .plugin_type
+                                                                            .clone(),
+                                                                    },
                                                             },
                                                             Pos2::default(),
                                                             [1, 0, 1],
@@ -699,27 +711,25 @@ fn render_samples(
                                             match node.node_type() {
                                                 NodeType::In => {}
                                                 NodeType::Out => {}
-                                                NodeType::ExternalPlugin { path, state } => {
-                                                    if let Some(handle) = global_state
-                                                        .plugin_manager
-                                                        .read()
-                                                        .loaded_plugins
-                                                        .get(path)
-                                                    {
-                                                        let is_open = false;
-                                                        
-                                                        // handle
-                                                        //     .displayed_window_information
-                                                        //     .lock()
-                                                        //     .is_none();
+                                                NodeType::ExternalPlugin {
+                                                    state,
+                                                    plugin_instance,
+                                                    ..
+                                                } => {
+                                                    if let Ok(instance) = plugin_instance.get() {
+                                                        let is_closed = instance
+                                                            .displayed_window_information
+                                                            .try_lock()
+                                                            .map(|inner| inner.is_none())
+                                                            .unwrap_or(false);
 
-                                                        ui.add_enabled_ui(is_open, |ui| {
+                                                        ui.add_enabled_ui(is_closed, |ui| {
                                                             // Open the plugin by creating a window and providing that handle to the plugin's renderer.
                                                             if ui.button("Open").clicked() {
                                                                 // Display plugin
                                                                 // Load in the state of the plugin as we have stored it
                                                                 display_error_as_toast(
-                                                                    handle.open(
+                                                                    instance.open(
                                                                         state.clone(),
                                                                         node_id,
                                                                         sample_id,

@@ -14,7 +14,7 @@ use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
 use strum::Display;
 use windows::Win32::{
-    Foundation::{HMODULE, HWND, LPARAM, WPARAM},
+    Foundation::{FreeLibrary, HMODULE, HWND, LPARAM, WPARAM},
     UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE},
 };
 
@@ -25,7 +25,7 @@ use crate::{
         windowing::{PluginWindowInformation, create_window, register_class},
     },
     plugins::{
-        api::vst2::{AEffectOpcode, ERect, VstOpcode},
+        api::vst2::{AEffectOpcode, ERect, VstOpcode, get_plugin_name, get_vendor_name},
         vst2::{
             PARAMETER_CHANNEL, host_callback, restore_state, save_state, set_parameter,
             set_parameter_in_state,
@@ -59,12 +59,16 @@ pub struct PluginLoadStatus {
     pub plugin_type: PluginType,
 
     /// Status of the plugin, this is used when loading in a library/plugin.
-    pub status: PluginStatus,
+    pub status: PluginHandleStatus,
 }
 
 #[derive(
     PartialEq, Eq, Hash, Debug, Copy, Clone, serde::Deserialize, serde::Serialize, Default, Display,
 )]
+///
+/// The type of the plugin. This selects the logic the plugin is used with.
+/// NOTICE: Verify the type of the plugin since it uses unsafe code, and if a plugin is misrepresented it will lead to UB.
+///
 pub enum PluginType {
     /// Vst2.4 implemented for legacy plugin support.
     #[default]
@@ -82,6 +86,10 @@ pub enum PluginType {
 }
 
 #[derive(Debug, Clone)]
+///
+/// A PluginHandle can be used to spawn miltiple instances of the same plugin. ([`PluginInstance`])
+/// Only one plugin handle can exist of one plugin loaded. (So one plugin handle represents one .dll)
+///
 pub struct PluginHandle {
     /// A pointer to the main entrypoint of the plugin.
     /// This can be used to spawn new instances of the sample plugin.
@@ -96,6 +104,53 @@ pub struct PluginHandle {
     /// Every plugin has its memory snapshotted at startup to know what should a valid "default" paramter list should look like.
     /// This is used as a default setting for the plugin.
     pub startup_memory_snapshot: Vec<u8>,
+
+    /// Plugin instances created from this [`PluginHandle`].
+    pub tracked_instances: Arc<Mutex<Vec<PluginInstance>>>,
+
+    pub info: Arc<PluginInformation>,
+}
+
+impl PluginHandle {
+    ///
+    /// Stops all tracked instances of the plugin and free the plugin from memory.
+    ///
+    pub fn destroy(self) -> anyhow::Result<()> {
+        // Close all tracked instances of the plugin before deallocating.
+        for inst in &*self.tracked_instances.lock() {
+            // Close plugin
+            inst.close()?;
+        }
+
+        // Free library after everything has been closed
+        unsafe { FreeLibrary(self.library_handle)? };
+
+        Ok(())
+    }
+
+    pub fn create_instance(&self) -> PluginInstance {
+        match self.plugin_type {
+            PluginType::Vst2 => {
+                // SAFETY: This function signature is transmuted based on the official SDK of VST 2.4.
+                let plugin_entry: PluginMain =
+                    unsafe { std::mem::transmute(self.plugin_entry_fn_ptr) };
+
+                // Call the main plugin entry passing the host callback
+                // Create a temporary instance of the plugin to get the "default" parameters of the plugin
+                let instance_callback = (plugin_entry)(host_callback);
+
+                PluginInstance {
+                    plugin_instance_ptr: instance_callback as *mut _,
+                    plugin_type: self.plugin_type,
+                    displayed_window_information: Arc::new(Mutex::new(None)),
+                    info: self.info.clone(),
+                }
+            }
+            PluginType::Vst3 => todo!(),
+            PluginType::Clap => todo!(),
+            PluginType::Lua => todo!(),
+        }
+    }
 }
 
 impl PartialEq for PluginHandle {
@@ -108,10 +163,15 @@ impl PartialEq for PluginHandle {
 
 #[derive(Debug)]
 pub struct PluginInformation {
-
+    pub name: String,
+    pub vendor: String,
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
+///
+/// A plugin instance is an instance created by a plugin handle. Multiple plugin instances can exist at the same time created by one [`PluginHandle`].
+///
 pub struct PluginInstance {
     /// Pointer to the handler struct of this plugin.
     /// The type of the plugin decides how this pointer is worked with.
@@ -120,7 +180,7 @@ pub struct PluginInstance {
     ///
     /// PluginType casts:
     /// - VST2: ```*mut AEffect```
-    pub plugin_handler_ptr: *mut usize,
+    pub plugin_instance_ptr: *mut usize,
 
     /// The type of the plugin
     pub plugin_type: PluginType,
@@ -133,14 +193,15 @@ pub struct PluginInstance {
     ///
     pub displayed_window_information: Arc<Mutex<Option<PluginWindowInformation>>>,
 
-    pub info: Arc<PluginInformation>
+    /// Information about the plugin itself. (This is created cloned from the plugin handle.)
+    pub info: Arc<PluginInformation>,
 }
 
 impl PluginInstance {
     pub fn load_state(&self, state: &[u8]) {
         match self.plugin_type {
             PluginType::Vst2 => unsafe {
-                restore_state(self.plugin_handler_ptr as *mut _, state);
+                restore_state(self.plugin_instance_ptr as *mut _, state);
             },
             PluginType::Vst3 => todo!(),
             PluginType::Clap => todo!(),
@@ -150,7 +211,7 @@ impl PluginInstance {
 
     pub fn save_state(&self) -> Vec<u8> {
         match self.plugin_type {
-            PluginType::Vst2 => unsafe { save_state(self.plugin_handler_ptr as *mut _) },
+            PluginType::Vst2 => unsafe { save_state(self.plugin_instance_ptr as *mut _) },
             PluginType::Vst3 => todo!(),
             PluginType::Clap => todo!(),
             PluginType::Lua => todo!(),
@@ -166,7 +227,7 @@ impl PluginInstance {
             PluginType::Vst2 => {
                 unsafe {
                     set_parameter(
-                        self.plugin_handler_ptr as *mut _,
+                        self.plugin_instance_ptr as *mut _,
                         param_index as i32,
                         *(value
                             .downcast::<f32>()
@@ -183,11 +244,12 @@ impl PluginInstance {
     }
 
     /// Closes the plugin's window.
-    pub fn destroy(&self) -> anyhow::Result<()> {
+    /// This does not free the library in order to deallocate the whole library, [`PluginHandle::destroy()`] should be called instead.
+    pub fn close(&self) -> anyhow::Result<()> {
         // Close based on plugin type.
         match self.plugin_type {
             PluginType::Vst2 => {
-                let effect = self.plugin_handler_ptr as *mut AEffect;
+                let effect = self.plugin_instance_ptr as *mut AEffect;
                 let dispatcher = unsafe { effect.read() }.dispatcher;
 
                 // Destroy window if open
@@ -226,10 +288,6 @@ impl PluginInstance {
             PluginType::Lua => {}
         }
 
-        // Free library from memory
-        // Make sure we are only doing this if the plugin is safe to deallocate
-        // unload_library(self.library_handle)?;
-
         Ok(())
     }
 
@@ -254,7 +312,7 @@ impl PluginInstance {
         match self.plugin_type {
             PluginType::Vst2 => {
                 // We cast to usize because a *mut pointer does not implement Send.
-                let plugin_handle_ptr = self.plugin_handler_ptr as usize;
+                let plugin_handle_ptr = self.plugin_instance_ptr as usize;
                 let effect = plugin_handle_ptr as *mut AEffect;
                 let dispatcher = unsafe { effect.read().dispatcher };
 
@@ -278,26 +336,8 @@ impl PluginInstance {
                     )
                 };
 
-                // VST2 spec guarantees max 32 chars including null terminator
-                let mut name_buf = [0u8; api::vst2::VSTNAMEMAXLEN];
-
-                // Request effect name from plugin
-                (dispatcher)(
-                    effect,
-                    AEffectOpcode::GetEffectName as i32,
-                    0,
-                    0,
-                    name_buf.as_mut_ptr() as *mut c_void,
-                    0.0,
-                );
-
-                // Read effect name
-                let name = unsafe {
-                    std::ffi::CStr::from_ptr(name_buf.as_ptr() as *const i8).to_string_lossy()
-                };
-
                 // Create PCWSTR from effect name string
-                let (name, _bytes) = str_to_pcwstr(&name);
+                let (name, _bytes) = str_to_pcwstr(&self.info.name);
 
                 // Create class for window
                 let class_name = register_class(name).unwrap();
@@ -365,6 +405,25 @@ impl PluginInstance {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct InstanceResult(Result<PluginInstance, PluginInstanceStatus>);
+
+impl InstanceResult {
+    pub fn get(&self) -> Result<&PluginInstance, &PluginInstanceStatus> {
+        self.0.as_ref()
+    }
+
+    pub fn new(plugin_instance: PluginInstance) -> Self {
+        Self(Ok(plugin_instance))
+    }
+}
+
+impl Default for InstanceResult {
+    fn default() -> Self {
+        Self(Err(PluginInstanceStatus::Unloaded))
+    }
+}
+
 ///
 /// The set of callbacks the windows callback calls when the window has some sort of interaction.
 ///
@@ -388,22 +447,31 @@ unsafe impl Sync for PluginInstance {}
 #[derive(
     Hash, Debug, Clone, Copy, serde::Deserialize, serde::Serialize, Default, PartialEq, Eq, Display,
 )]
-pub enum PluginStatus {
+pub enum PluginHandleStatus {
     #[default]
     Ok,
     FileNotFound,
     PluginEntryNotFound,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct PluginLoader {
-    pub path: PathBuf,
-    pub plugin_type: PluginType,
+#[derive(
+    Hash, Debug, Clone, Copy, serde::Deserialize, serde::Serialize, Default, PartialEq, Eq, Display,
+)]
+pub enum PluginInstanceStatus {
+    #[default]
+    Unloaded,
+    NotFound,
+}
 
-    /// This status field gets reinitalized every time a plugin is loaded and an error occurs.
-    /// Since all of the plugins are loaded into memory at startup this field will get updated every startup.
-    #[serde(skip)]
-    pub status: PluginStatus,
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+/// Contains all nescesarry information to try to load in or refer to a plugin.
+pub struct PluginDescriptor {
+    /// Path to the plugin
+    pub path: PathBuf,
+
+    /// The type of the plugin.
+    /// This is set by the user abut it should be validated.
+    pub plugin_type: PluginType,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
@@ -436,7 +504,7 @@ impl PluginManager {
             path.clone(),
             PluginLoadStatus {
                 plugin_type,
-                status: crate::plugins::PluginStatus::Ok,
+                status: crate::plugins::PluginHandleStatus::Ok,
             },
         );
 
@@ -469,6 +537,10 @@ impl PluginManager {
                         // Create a temporary instance of the plugin to get the "default" parameters of the plugin
                         let plugin_callback = (plugin_entry)(host_callback);
 
+                        // Fetch some information about the plugin
+                        let name = unsafe { get_plugin_name(plugin_callback) };
+                        let vendor = unsafe { get_vendor_name(plugin_callback) };
+
                         // Store plugin
                         self.loaded_plugins.insert(
                             path.clone(),
@@ -484,11 +556,20 @@ impl PluginManager {
 
                                 // When loading up the plugin make sure to snapshot its settings memory so that we know whats a "default" paramater list to the plugin.
                                 startup_memory_snapshot: unsafe { save_state(plugin_callback) },
+
+                                // Create a list where all of the newly created instances get inserted into.
+                                tracked_instances: Arc::new(Mutex::new(Vec::new())),
+
+                                info: Arc::new(PluginInformation {
+                                    name,
+                                    vendor,
+                                    path: path.clone(),
+                                }),
                             },
                         );
 
-                        // Unload the plugin
-                        // We do not need to do anything else since we havent even opened the plugin or anything.
+                        // Close this instance of the plugin
+                        // We dont need this instance of the plugin anymore, we only used it to create the startup snapshot
                         ((unsafe { &*plugin_callback }).dispatcher)(
                             plugin_callback,
                             VstOpcode::Close.as_i32(),
@@ -498,7 +579,7 @@ impl PluginManager {
                             0.0,
                         );
                     } else {
-                        loader.status = PluginStatus::PluginEntryNotFound;
+                        loader.status = PluginHandleStatus::PluginEntryNotFound;
                     }
                 }
                 PluginType::Vst3 => {}
@@ -507,7 +588,7 @@ impl PluginManager {
             }
         } else {
             // Set the plugins state to not found.
-            loader.status = PluginStatus::FileNotFound;
+            loader.status = PluginHandleStatus::FileNotFound;
         }
     }
 }

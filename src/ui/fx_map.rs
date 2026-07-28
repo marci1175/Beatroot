@@ -8,7 +8,7 @@ use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
 use parking_lot::RwLock;
 use strum::{EnumCount, VariantArray};
 
-use crate::plugins::PluginInstance;
+use crate::plugins::{InstanceResult, PluginDescriptor, PluginInstance};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy)]
 /// The attributes of an object in the Ui.
@@ -148,7 +148,16 @@ pub enum NodeType {
     /// Plugin node.
     /// This node manages the underlying VST plugin's effects on the samples in the effects chain.
     ExternalPlugin {
-        plugin_instance: PluginInstance,
+        #[serde(skip)]
+        /// Instance of a plugin, this is loaded at runtime.
+        /// By default all intstances of any plugin are unloaded.
+        plugin_instance: InstanceResult,
+
+        /// The plugin's descriptor
+        /// This is used to refer to the plugin handle at startup to initialize an instance of the plugin.
+        plugin_descriptor: PluginDescriptor,
+
+        /// The current state of the plugin
         state: Arc<RwLock<Vec<u8>>>,
     },
 
@@ -471,7 +480,6 @@ impl NodeMap {
     fn draw_nodes(&mut self, ui: &mut egui::Ui, available_rect: egui::Rect, reference_point: Pos2) {
         // Draw the nodes themselves
         for (node_id, node) in self.nodes.clone().iter().enumerate() {
-            // Draw the actual nodes themselves
             let center = Pos2::new(
                 reference_point.x
                     + node.position.x * self.ui_attributes.scale
@@ -481,8 +489,55 @@ impl NodeMap {
                     + self.ui_attributes.offset.y,
             );
 
-            let node_rect =
+            // The size of a rect is calculated at creation time but it may be resized any time.
+            let mut node_rect =
                 egui::Rect::from_center_size(center, node.size * self.ui_attributes.scale);
+
+            // Indicates if any error occured while handling the plugin.
+            let mut error_present = false;
+
+            // Create galley for sample label
+            let galley = ui.fonts_mut(|f| {
+                f.layout(
+                    match &node.node_type {
+                        NodeType::In => "Input".to_string(),
+                        NodeType::Out => "Output".to_string(),
+                        NodeType::ExternalPlugin {
+                            plugin_instance,
+                            plugin_descriptor,
+                            ..
+                        } => match plugin_instance.get() {
+                            Ok(inst) => inst.info.name.clone(),
+                            Err(err) => {
+                                error_present = true;
+
+                                format!(
+                                    r#"{}{}"{}""#,
+                                    err.to_string(),
+                                    '\n',
+                                    plugin_descriptor.path.display()
+                                )
+                            }
+                        },
+                        NodeType::InternalCustom(_) => "Built-in".to_string(),
+                    },
+                    egui::FontId::proportional(10.0 * self.ui_attributes.scale),
+                    // Display the label of the node with the specified color
+                    {
+                        if error_present {
+                            Color32::RED
+                        } else if self.currently_selected_node_id == Some(node_id) {
+                            Color32::BLACK
+                        } else {
+                            Color32::WHITE
+                        }
+                    },
+                    node_rect.width(),
+                )
+            });
+
+            // Resize node_rect to appropriate size
+            node_rect = Rect::from_center_size(node_rect.center(), node_rect.size().max(galley.size()));
 
             // Draw the body and the outline of the node
             // The outline would only be visible if two nodes overlap.
@@ -500,28 +555,6 @@ impl NodeMap {
                 Stroke::new(1.0, Color32::BLACK),
                 egui::StrokeKind::Outside,
             );
-
-            // Create galley for sample label
-            let galley = ui.fonts_mut(|f| {
-                f.layout(
-                    match &node.node_type {
-                        NodeType::In => "Input".to_string(),
-                        NodeType::Out => "Output".to_string(),
-                        NodeType::ExternalPlugin { plugin_instance, .. } => plugin_instance.info,
-                        NodeType::InternalCustom(_) => "Built-in".to_string(),
-                    },
-                    egui::FontId::proportional(10.0 * self.ui_attributes.scale),
-                    // Display the label of the node with the specified color
-                    {
-                        if self.currently_selected_node_id == Some(node_id) {
-                            Color32::BLACK
-                        } else {
-                            Color32::WHITE
-                        }
-                    },
-                    node_rect.width(),
-                )
-            });
 
             // Calculate center of text
             let text_pos = center - galley.size() / 2.0;
