@@ -678,8 +678,7 @@ fn render_samples(
                                                                     PluginDescriptor {
                                                                         path: path.clone(),
                                                                         plugin_type: plugin_handle
-                                                                            .plugin_type
-                                                                            .clone(),
+                                                                            .plugin_type,
                                                                     },
                                                             },
                                                             Pos2::default(),

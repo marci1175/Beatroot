@@ -180,7 +180,7 @@ pub fn display_plugins_window(
                                     // If a plugin was removed this is a Some.
                                     let mut removed_plugin: Option<PathBuf> = None;
 
-                                    for (path, _handle) in plugin_manager.loaded_plugins.iter() {
+                                    for path in plugin_manager.loaded_plugins.keys() {
                                         ui.horizontal(|ui| {
                                             // Show the name of the plugin
                                             ui.label(

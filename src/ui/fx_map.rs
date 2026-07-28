@@ -1,6 +1,5 @@
 use std::{
     collections::{HashSet, VecDeque},
-    path::PathBuf,
     sync::Arc,
 };
 
@@ -8,7 +7,7 @@ use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
 use parking_lot::RwLock;
 use strum::{EnumCount, VariantArray};
 
-use crate::plugins::{InstanceResult, PluginDescriptor, PluginInstance};
+use crate::plugins::{InstanceResult, PluginDescriptor};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy)]
 /// The attributes of an object in the Ui.
@@ -513,7 +512,7 @@ impl NodeMap {
 
                                 format!(
                                     r#"{}{}"{}""#,
-                                    err.to_string(),
+                                    err,
                                     '\n',
                                     plugin_descriptor.path.display()
                                 )
@@ -537,7 +536,8 @@ impl NodeMap {
             });
 
             // Resize node_rect to appropriate size
-            node_rect = Rect::from_center_size(node_rect.center(), node_rect.size().max(galley.size()));
+            node_rect =
+                Rect::from_center_size(node_rect.center(), node_rect.size().max(galley.size()));
 
             // Draw the body and the outline of the node
             // The outline would only be visible if two nodes overlap.

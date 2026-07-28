@@ -4,7 +4,6 @@ use std::{
     ffi::c_void,
     path::PathBuf,
     sync::{Arc, LazyLock},
-    time::Duration,
 };
 
 use ::vst::api::{AEffect, PluginMain};
@@ -20,15 +19,14 @@ use windows::Win32::{
 
 use crate::{
     internals::{
-        library::{get_fn_addr, load_library, unload_library},
+        library::{get_fn_addr, load_library},
         mem::str_to_pcwstr,
         windowing::{PluginWindowInformation, create_window, register_class},
     },
     plugins::{
         api::vst2::{AEffectOpcode, ERect, VstOpcode, get_plugin_name, get_vendor_name},
         vst2::{
-            PARAMETER_CHANNEL, host_callback, restore_state, save_state, set_parameter,
-            set_parameter_in_state,
+            host_callback, restore_state, save_state, set_parameter,
         },
     },
     ui::fx_map::NodeMap,
@@ -594,8 +592,8 @@ impl PluginManager {
 }
 
 pub fn create_plugin_state_writer(
-    plugin_manager: Arc<RwLock<PluginManager>>,
-    fx_map: Arc<DashMap<usize, NodeMap>>,
+    _plugin_manager: Arc<RwLock<PluginManager>>,
+    _fx_map: Arc<DashMap<usize, NodeMap>>,
 ) {
     // std::thread::spawn(move || {
     //     loop {

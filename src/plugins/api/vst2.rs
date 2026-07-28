@@ -1,4 +1,4 @@
-use std::os::raw::{c_char, c_void};
+use std::os::raw::c_char;
 
 use num_enum::TryFromPrimitive;
 use vst::api::AEffect;

@@ -137,7 +137,7 @@ fn resample(
 fn apply_effects(
     samples: &mut Vec<SampleBuffer>,
     effects_map: Arc<DashMap<usize, NodeMap>>,
-    plugin_manager: Arc<RwLock<PluginManager>>,
+    _plugin_manager: Arc<RwLock<PluginManager>>,
 ) {
     // Clone the samples so that we can have a mutable reference into them
     for sample in samples.clone() {
@@ -162,7 +162,7 @@ fn apply_effects(
                         } => {
                             // If any error occured while handling the plugin just skip the entire plugin.
                             if let Ok(plugin_instance) = plugin_instance.get() {
-                                let aeffect = plugin_instance.plugin_instance_ptr as *mut AEffect;
+                                let _aeffect = plugin_instance.plugin_instance_ptr as *mut AEffect;
 
                                 // Apply effects
                                 // (aeffect.processReplacing)(raw_aeffect, );
