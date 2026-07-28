@@ -366,7 +366,7 @@ impl PluginInstance {
         let window_info = self.displayed_window_information.clone();
 
         // Load the plugin's state
-        self.load_state(&state.read());
+        self.load_state(&state.read())?;
 
         // Match the pulgin type and display appropriately
         match self.plugin_type {
@@ -466,6 +466,7 @@ impl PluginInstance {
 }
 
 #[derive(Debug, Clone)]
+/// Wrapper around a [`PluginInstance`] providing extra context to the creation of a plugin instance.
 pub struct InstanceResult(Result<PluginInstance, PluginInstanceStatus>);
 
 impl InstanceResult {
@@ -659,6 +660,13 @@ impl PluginManager {
     }
 }
 
+/// 
+/// Creates a writer thread that writes the changes made to plugins into their state buffer.
+/// 
+/// The method the changes are received changes from plugin type to plugin type:
+///     VST2:
+///     The changes are received on [`PARAMETER_CHANNEL`] from the main callback.
+/// 
 pub fn create_plugin_state_writer(
     plugin_manager: Arc<RwLock<PluginManager>>,
 ) {
