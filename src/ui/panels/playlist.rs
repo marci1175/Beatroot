@@ -729,8 +729,8 @@ fn render_samples(
                                                     // Remove the plugin's fastpath from the states
                                                     NodeType::ExternalPlugin {
                                                         plugin_instance,
-                                                        plugin_descriptor,
-                                                        state,
+                                                        plugin_descriptor: _,
+                                                        state: _,
                                                     } => {
                                                         // Close the plugin when removed
                                                         if let Ok(inst) = plugin_instance.get() {
@@ -752,7 +752,7 @@ fn render_samples(
                                                         }
                                                     }
                                                     NodeType::InternalCustom(
-                                                        plugin_node_properties,
+                                                        _plugin_node_properties,
                                                     ) => todo!(),
                                                 }
                                             }

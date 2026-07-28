@@ -4,7 +4,6 @@ use std::{
     ffi::c_void,
     path::PathBuf,
     sync::{Arc, LazyLock, atomic::AtomicBool},
-    time::Duration,
 };
 
 use ::vst::api::{AEffect, PluginMain};
@@ -206,14 +205,15 @@ impl PluginInstance {
             ));
         };
 
-        Ok(match self.plugin_type {
+        let _: () = match self.plugin_type {
             PluginType::Vst2 => unsafe {
                 restore_state(self.plugin_instance_ptr as *mut _, state);
             },
             PluginType::Vst3 => todo!(),
             PluginType::Clap => todo!(),
             PluginType::Lua => todo!(),
-        })
+        };
+        Ok(())
     }
 
     pub fn with_state(self, state: &[u8]) -> Self {

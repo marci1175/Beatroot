@@ -6,7 +6,7 @@ use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
 use parking_lot::RwLock;
 use strum::{EnumCount, VariantArray};
 
-use crate::{audio::playback::FXMap, plugins::{InstanceResult, PluginDescriptor, PluginHandle, PluginManager}, ui::fx_map};
+use crate::{audio::playback::FXMap, plugins::{InstanceResult, PluginDescriptor, PluginHandle}};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy)]
 /// The attributes of an object in the Ui.

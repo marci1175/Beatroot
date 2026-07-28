@@ -1,4 +1,4 @@
-use std::{os::raw::c_void, sync::Arc};
+use std::os::raw::c_void;
 
 use windows::{
     Win32::{Foundation::*, System::LibraryLoader::GetModuleHandleW, UI::WindowsAndMessaging::*},

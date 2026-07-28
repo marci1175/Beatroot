@@ -65,7 +65,7 @@ impl<T> ExactLengthBuffer<T> {
         // Ensure buffer size
         if self.len < self.inner.len() {
             // Remove the oldest item
-            self.inner.swap_remove(0);
+            self.inner.remove(0);
         }
     }
 
