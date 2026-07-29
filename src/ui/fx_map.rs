@@ -1,12 +1,17 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque}, path::PathBuf, sync::Arc,
+    collections::{HashMap, HashSet, VecDeque},
+    path::PathBuf,
+    sync::Arc,
 };
 
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, vec2};
 use parking_lot::RwLock;
 use strum::{EnumCount, VariantArray};
 
-use crate::{audio::playback::FXMap, plugins::{InstanceResult, PluginDescriptor, PluginHandle}};
+use crate::{
+    audio::playback::FXMap,
+    plugins::{InstanceResult, PluginDescriptor, PluginHandle},
+};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy)]
 /// The attributes of an object in the Ui.
@@ -887,22 +892,27 @@ fn calculate_connector_pos(
     }
 }
 
-/// 
+///
 /// Checks all nodes of the FXMap if they are representing instances of valid plugins handles.
-/// 
+///
 pub fn validate_all_nodes(fx_map: FXMap, loaded_plugins: &HashMap<PathBuf, PluginHandle>) {
     for mut sample in fx_map.iter_mut() {
         for node in sample.value_mut().nodes_mut() {
             match node.node_type_mut() {
-                NodeType::In |
-                NodeType::Out => (),
-                NodeType::ExternalPlugin { plugin_instance, plugin_descriptor, .. } => {
+                NodeType::In | NodeType::Out => (),
+                NodeType::ExternalPlugin {
+                    plugin_instance,
+                    plugin_descriptor,
+                    ..
+                } => {
                     // If the node represents a plugin that is not found in the list of loaded plugins
                     // Modify its status to NotFound.
                     if !loaded_plugins.contains_key(&plugin_descriptor.path) {
-                        *plugin_instance = InstanceResult::new_raw(Err(crate::plugins::PluginInstanceStatus::NotFound));
+                        *plugin_instance = InstanceResult::new_raw(Err(
+                            crate::plugins::PluginInstanceStatus::NotFound,
+                        ));
                     }
-                },
+                }
                 NodeType::InternalCustom(_plugin_node_properties) => todo!(),
             }
         }

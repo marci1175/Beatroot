@@ -6,7 +6,8 @@ use egui_toast::ToastStyle;
 use strum::{Display, VariantArray};
 
 use crate::{
-    app::Application, ui::{fx_map::validate_all_nodes, panels::lib::display_error_as_toast, windows::PluginsState},
+    app::Application,
+    ui::{fx_map::validate_all_nodes, panels::lib::display_error_as_toast, windows::PluginsState},
 };
 
 #[derive(Display, Debug, Default, Clone, Copy, strum::VariantArray, PartialEq)]
@@ -211,7 +212,10 @@ pub fn display_plugins_window(
                                         };
 
                                         // Validate all nodes in the FXMap afterwards
-                                        validate_all_nodes(global_state.fx_map.clone(), &plugin_manager.loaded_plugins);
+                                        validate_all_nodes(
+                                            global_state.fx_map.clone(),
+                                            &plugin_manager.loaded_plugins,
+                                        );
 
                                         // Remove the plugin from the auto-load plugin list.
                                         plugin_manager.plugin_loaders.swap_remove(&path);

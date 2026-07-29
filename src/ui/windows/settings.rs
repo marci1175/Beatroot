@@ -3,7 +3,11 @@ use std::sync::Arc;
 use egui::{Align2, Color32, InnerResponse, Panel, RichText, ScrollArea, Sense, Ui};
 use strum::{Display, VariantArray};
 
-use crate::{app::Application, audio::host::{HOST_STATE, HostInformation}, ui::windows::SettingsState};
+use crate::{
+    app::Application,
+    audio::host::{HOST_STATE, HostInformation},
+    ui::windows::SettingsState,
+};
 
 #[derive(
     Debug,
@@ -80,9 +84,7 @@ pub fn display_settings_window(
                     ScrollArea::both().auto_shrink([false, false]).show(
                         ui,
                         |ui| match window_state.current_tab {
-                            SettingsType::General => {
-
-                            }
+                            SettingsType::General => {}
                             SettingsType::Plugins => {}
                             SettingsType::Playlist => {
                                 let mut playlist_guard =
@@ -136,24 +138,53 @@ pub fn display_settings_window(
                                     egui::ComboBox::from_label("Sampling Rate")
                                         .selected_text(format!("{:?}", current_sample_rate))
                                         .show_ui(ui, |ui| {
-                                            ui.selectable_value(&mut current_sample_rate, 32000, "32000hz");
-                                            ui.selectable_value(&mut current_sample_rate, 44100, "44100hz");
-                                            ui.selectable_value(&mut current_sample_rate, 48000, "48000hz");
-                                            ui.selectable_value(&mut current_sample_rate, 88200, "88200hz");
-                                            ui.selectable_value(&mut current_sample_rate, 96000, "96000hz");
-                                            ui.selectable_value(&mut current_sample_rate, 176400, "176400hz");
-                                            ui.selectable_value(&mut current_sample_rate, 192000, "192000hz");
-                                        }
-                                    );
+                                            ui.selectable_value(
+                                                &mut current_sample_rate,
+                                                32000,
+                                                "32000hz",
+                                            );
+                                            ui.selectable_value(
+                                                &mut current_sample_rate,
+                                                44100,
+                                                "44100hz",
+                                            );
+                                            ui.selectable_value(
+                                                &mut current_sample_rate,
+                                                48000,
+                                                "48000hz",
+                                            );
+                                            ui.selectable_value(
+                                                &mut current_sample_rate,
+                                                88200,
+                                                "88200hz",
+                                            );
+                                            ui.selectable_value(
+                                                &mut current_sample_rate,
+                                                96000,
+                                                "96000hz",
+                                            );
+                                            ui.selectable_value(
+                                                &mut current_sample_rate,
+                                                176400,
+                                                "176400hz",
+                                            );
+                                            ui.selectable_value(
+                                                &mut current_sample_rate,
+                                                192000,
+                                                "192000hz",
+                                            );
+                                        });
 
                                     // Handle selection change
                                     if current_sample_rate != original_sample_rate {
                                         // Modify the current host state
-                                        HOST_STATE.store(Arc::new(HostInformation::new(current_sample_rate, current_host_state.channel_count)));
+                                        HOST_STATE.store(Arc::new(HostInformation::new(
+                                            current_sample_rate,
+                                            current_host_state.channel_count,
+                                        )));
                                     }
                                 });
-                                
-                            },
+                            }
                         },
                     );
                 });

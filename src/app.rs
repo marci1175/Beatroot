@@ -8,8 +8,14 @@ use parking_lot::{Mutex, RwLock};
 
 use crate::{
     audio::{
-        host::{HOST_STATE, HostInformation}, lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread}, playback::{FXMap, MasterPlaybackThread},
-    }, internals::{endpoint::check_for_update, utils::ExactLengthBuffer}, plugins::{PluginManager, create_plugin_state_writer, initialize_fxmap_nodes}, project_manager::open_project, ui::{
+        host::{HOST_STATE, HostInformation},
+        lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread},
+        playback::{FXMap, MasterPlaybackThread},
+    },
+    internals::{endpoint::check_for_update, utils::ExactLengthBuffer},
+    plugins::{PluginManager, create_plugin_state_writer, initialize_fxmap_nodes},
+    project_manager::open_project,
+    ui::{
         panels::lib::{GlobalState, Panel, PanelStates, create_panels},
         windows::WindowsManager,
     },
@@ -91,7 +97,7 @@ impl Default for Application {
         // Get config of host
         let host_cfg = host_audio.sink.config();
 
-        // Get host default parameters for playback 
+        // Get host default parameters for playback
         let sample_rate = host_cfg.sample_rate().get();
         let channel_count = host_cfg.channel_count().get();
 
@@ -163,9 +169,7 @@ impl AppRoot {
 
         // Spawn the thread responsible for writing the changes made in the plugins to the nodes
         // NOTICE: This should never panic as there is no way currently to recover this.
-        create_plugin_state_writer(
-            app_ctx.application.plugin_manager.clone(),
-        );
+        create_plugin_state_writer(app_ctx.application.plugin_manager.clone());
 
         app_ctx
     }

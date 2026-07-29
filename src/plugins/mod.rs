@@ -3,10 +3,9 @@ use std::{
     collections::HashMap,
     ffi::c_void,
     path::PathBuf,
-    sync::{Arc, LazyLock, atomic::AtomicBool},
+    sync::{Arc, atomic::AtomicBool},
 };
 
-use arc_swap::ArcSwap;
 use ::vst::api::{AEffect, PluginMain};
 use anyhow::anyhow;
 use dashmap::DashMap;
@@ -23,9 +22,15 @@ use crate::{
         library::{get_fn_addr, load_library},
         mem::str_to_pcwstr,
         windowing::{PluginWindowInformation, create_window, register_class},
-    }, plugins::{
-        api::vst2::{AEffectOpcode, ERect, VstOpcode, get_plugin_name, get_vendor_name}, vst2::{PARAMETER_CHANNEL, host_callback, restore_state, save_state, set_parameter, set_parameter_in_state},
-    }, ui::fx_map::NodeMap,
+    },
+    plugins::{
+        api::vst2::{AEffectOpcode, ERect, VstOpcode, get_plugin_name, get_vendor_name},
+        vst2::{
+            PARAMETER_CHANNEL, host_callback, restore_state, save_state, set_parameter,
+            set_parameter_in_state,
+        },
+    },
+    ui::fx_map::NodeMap,
 };
 
 pub mod api;
@@ -278,7 +283,7 @@ impl PluginInstance {
             .fetch_not(std::sync::atomic::Ordering::Relaxed)
         {
             return Err(anyhow!(
-                "Failed to close plugin as it was flagged as invalid."
+                "Failed to close plugin as it was flagged as invalid before."
             ));
         };
 
@@ -645,16 +650,14 @@ impl PluginManager {
     }
 }
 
-/// 
+///
 /// Creates a writer thread that writes the changes made to plugins into their state buffer.
-/// 
+///
 /// The method the changes are received changes from plugin type to plugin type:
 ///     VST2:
 ///     The changes are received on [`PARAMETER_CHANNEL`] from the main callback.
-/// 
-pub fn create_plugin_state_writer(
-    plugin_manager: Arc<RwLock<PluginManager>>,
-) {
+///
+pub fn create_plugin_state_writer(plugin_manager: Arc<RwLock<PluginManager>>) {
     std::thread::spawn(move || {
         loop {
             // Update stored plugin states when the plugin is modified.
