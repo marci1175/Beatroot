@@ -83,3 +83,49 @@ pub fn path_to_number(path: &PathBuf) -> u64 {
     path.hash(&mut hasher);
     hasher.finish()
 }
+
+use std::sync::{Arc, Condvar, Mutex};
+
+#[derive(Clone)]
+pub struct Stopper {
+    inner: Arc<(Mutex<bool>, Condvar)>,
+}
+
+impl Stopper {
+    pub fn new(should_stop: bool) -> Self {
+        Self {
+            inner: Arc::new((Mutex::new(should_stop), Condvar::new())),
+        }
+    }
+
+    /// Mark as stopped. Any thread calling `should_wait()` after this will block.
+    pub fn stop(&self) {
+        let (lock, _) = &*self.inner;
+        let mut stopped = lock.lock().unwrap();
+        *stopped = true;
+    }
+
+    /// Release the stop. Wakes up any threads currently blocked in `should_wait()`.
+    pub fn go(&self) {
+        let (lock, cvar) = &*self.inner;
+        let mut stopped = lock.lock().unwrap();
+        *stopped = false;
+        cvar.notify_all();
+    }
+
+    /// Blocks if currently stopped, until another thread calls `go()`.
+    /// Returns immediately if not stopped.
+    pub fn should_wait(&self) {
+        let (lock, cvar) = &*self.inner;
+        let mut stopped = lock.lock().unwrap();
+        while *stopped {
+            stopped = cvar.wait(stopped).unwrap();
+        }
+    }
+}
+
+impl Default for Stopper {
+    fn default() -> Self {
+        Self::new(true)
+    }
+}

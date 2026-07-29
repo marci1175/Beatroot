@@ -23,9 +23,7 @@ use crate::{
     audio::{
         host::{HOST_STATE, Tracked},
         pipeline::{mix_samples, process_samples},
-    },
-    plugins::PluginManager,
-    ui::{fx_map::NodeMap, panels::playlist::PlaybackState},
+    }, internals::utils::Stopper, plugins::PluginManager, ui::{fx_map::NodeMap, panels::playlist::PlaybackState},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -163,9 +161,7 @@ impl SampleBuffer {
         let channels = self.channels as usize;
 
         let frames = self.samples.len() / channels;
-        let mut planar: Vec<Vec<f32>> = (0..channels)
-            .map(|_| Vec::with_capacity(frames))
-            .collect();
+        let mut planar: Vec<Vec<f32>> = (0..channels).map(|_| Vec::with_capacity(frames)).collect();
 
         for frame in self.samples.chunks_exact(channels) {
             for (ch, &s) in frame.iter().enumerate() {
@@ -243,15 +239,18 @@ impl Source for SampleBuffer {
 /// Key is the unique id of the sample, value is the effects chain to the sample (nodemap for easier user management).
 pub type FXMap = Arc<DashMap<usize, NodeMap>>;
 
-/// Time since starting the playback in nanos.
-/// When paused this field stops being updated.
-pub static GLOBAL_PLAYBACK_TIMER: AtomicU64 = AtomicU64::new(0);
-
 pub struct SampleIngestManager {
     /// Samples are provided from a set amount of tracks (cpu core count) in pre-determined buffer sizes.
     /// For example the samples are ingested from every 10 tracks. So we have to ingest those 10 tracks worth of samples before moving on to the 2nd set of 10 and so forth.
     /// If there are less than 10 tracks available the remainder of worker threads will be idle.
     pub ingest_channel: flume::Sender<Vec<SampleBuffer>>,
+
+    /// This is used to mark where the ingest thread should offset sample index to fetch the next sample packet.
+    /// When a sample is received it is immediately incremented (but is only made available after the stopper unlocks) 
+    pub sample_ingest_tracker: Arc<AtomicU64>,
+
+    /// Basically a limiter for the ingest thread, this is controlled by the playback thread to manage the amount of 
+    pub should_ingest: Stopper,
 }
 
 /// This represents the main playback manager in the application.
@@ -262,9 +261,8 @@ pub struct MasterPlaybackThread {
     /// This is mostly timing related things and the channel which the other thread can use to provide information to the playback thread.  
     sample_ingest: SampleIngestManager,
 
-    sample_tracker: Arc<AtomicU64>,
-
-    playback_start_ts: Instant,
+    /// This is used to track how many samples ([f32]s) have been played back already, this is used for visually indicating where the cursor is in the playlist. 
+    sample_playback_tracker: Arc<AtomicU64>,
 
     /// Mixer handle of the host. This is used to append samples to the host's output.
     host_mixer: Mixer,
@@ -283,13 +281,23 @@ impl MasterPlaybackThread {
 
         // This will be handed to the thread the other is returned
         let sample_tracker_clone = sample_tracker.clone();
+        
+        // The stopper is used to signal the ingest thread when to send its new samples
+        let should_ingest = Stopper::new(false);
+
+        // This one is moved to the playback thread so that it can control to ingest thread
+        let should_ingest_clone = should_ingest.clone();
 
         // Create sample ingest channel, this serves as a way for the main thread to send information to the master playback thread.
-        let (sender, receiver) = flume::bounded::<Vec<SampleBuffer>>(1024);
+        let (sender, receiver) = flume::bounded::<Vec<SampleBuffer>>(64);
         let host_mixer_clone = host_mixer.clone();
 
         // Create a map of effects which the samples will be applied with.
         let fx_map_clone = fx_map.clone();
+
+        // Track where the ingest thread should get the sample packet from (idx + packet_size)
+        let sample_ingest_tracker = Arc::new(AtomicU64::new(0));
+        let sample_ingest_tracker_clone = sample_ingest_tracker.clone();
 
         // Create a thread for handling incoming samples
         std::thread::spawn(move || {
@@ -322,8 +330,13 @@ impl MasterPlaybackThread {
             let info = HOST_STATE.load();
 
             // Zero the mixer buffer
-            let mut mixer_buffer: Vec<f32> = vec![0.0; (info.channel_count as usize * info.sample_rate as usize * PLAYBACK_BUFFER_LEN_MS)
-                    / 1000];
+            let mut mixer_buffer: Vec<f32> = vec![
+                0.0;
+                (info.channel_count as usize
+                    * info.sample_rate as usize
+                    * PLAYBACK_BUFFER_LEN_MS)
+                    / 1000
+            ];
 
             // Drop the guard with the host information
             drop(info);
@@ -339,13 +352,17 @@ impl MasterPlaybackThread {
                 // Listen for an incoming sample packet
                 match receiver.recv() {
                     Ok(samples) => {
+                        // Lock the ingest thread until we have processed most of the samples, we should unlock the stopper after applying effects so that we have plenty time.
+                        should_ingest_clone.stop();
+
                         // Get a reference to the host state for this sample packet
                         let host_info = HOST_STATE.load();
 
                         // Get the updated buffer size every sample packet
-                        let buffer_size =
-                            (host_info.channel_count as usize * host_info.sample_rate as usize * PLAYBACK_BUFFER_LEN_MS)
-                                / 1000;
+                        let buffer_size = (host_info.channel_count as usize
+                            * host_info.sample_rate as usize
+                            * PLAYBACK_BUFFER_LEN_MS)
+                            / 1000;
 
                         // Handle samples by passing them into the pipeline
                         // This function has a side effect on `processed_sample_buffer`.
@@ -361,6 +378,9 @@ impl MasterPlaybackThread {
                         )
                         .expect("Failed to process sample in master playback thread.");
 
+                        // Signal the ingest to send the new packet
+                        should_ingest_clone.go();
+
                         // Mix all of the samples into `mixer_buffer`
                         mix_samples(&mut mixer_buffer, &processed_sample_buffer);
 
@@ -374,7 +394,7 @@ impl MasterPlaybackThread {
 
                         // Clear the buffer
                         mixer_buffer.clear();
-                        // Zero buffer so that 
+                        // Zero buffer so that
                         mixer_buffer.resize(buffer_size, 0.0);
 
                         // Created a tracked sample which basically dereferences (not actually but all trait function calls go to the inner value) to the inner value.
@@ -390,7 +410,7 @@ impl MasterPlaybackThread {
                             sample_tracker_clone.clone(),
                         );
 
-                        // Append to queue
+                        // Append finished work to queue
                         queue_in.append(tracked_sample);
                     }
                     Err(error) => {
@@ -404,10 +424,11 @@ impl MasterPlaybackThread {
         Ok(Self {
             sample_ingest: SampleIngestManager {
                 ingest_channel: sender,
+                sample_ingest_tracker,
+                should_ingest,
             },
             host_mixer,
-            playback_start_ts: Instant::now(),
-            sample_tracker,
+            sample_playback_tracker: sample_tracker,
         })
     }
 }
