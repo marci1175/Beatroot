@@ -6,6 +6,7 @@ use std::{
     sync::{Arc, LazyLock, atomic::AtomicBool},
 };
 
+use arc_swap::ArcSwap;
 use ::vst::api::{AEffect, PluginMain};
 use anyhow::anyhow;
 use dashmap::DashMap;
@@ -29,22 +30,6 @@ use crate::{
 
 pub mod api;
 pub mod vst2;
-
-pub struct HostState {}
-
-impl Default for HostState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl HostState {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-pub static HOST_STATE: LazyLock<Mutex<HostState>> = LazyLock::new(|| Mutex::new(HostState::new()));
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PluginLoadStatus {

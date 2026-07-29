@@ -1,4 +1,4 @@
-pub mod devices;
+pub mod host;
 pub mod lib;
 pub mod midi;
 pub mod pipeline;

@@ -14,9 +14,7 @@ use rubato::{
 };
 
 use crate::{
-    audio::pipeline::process_samples,
-    plugins::PluginManager,
-    ui::{fx_map::NodeMap, panels::playlist::PlaybackState},
+    audio::{host::HOST_STATE, pipeline::process_samples}, plugins::PluginManager, ui::{fx_map::NodeMap, panels::playlist::PlaybackState},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -34,12 +32,6 @@ impl Default for PlayerPreferences {
             volume: 1.0,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct HostInformation {
-    pub sample_rate: u32,
-    pub channel_count: u16,
 }
 
 /// Used for playing back samples easily. This is the simpler form of playing back samples.
@@ -204,7 +196,6 @@ pub struct MasterPlaybackThread {
 
 impl MasterPlaybackThread {
     pub fn new(
-        host_info: HostInformation,
         host_mixer: Mixer,
         fx_map: FXMap,
         plugin_manager: Arc<RwLock<PluginManager>>,
@@ -223,7 +214,6 @@ impl MasterPlaybackThread {
         // Create a thread for handling incoming samples
         std::thread::spawn(move || {
             let _host_mixer = host_mixer_clone.clone();
-            let host_info = host_info;
             let effects_map: Arc<DashMap<usize, NodeMap>> = fx_map_clone.clone();
 
             // Create parameters for the resampler
@@ -246,6 +236,8 @@ impl MasterPlaybackThread {
                 // Listen for an incoming sample packet
                 match receiver.recv() {
                     Ok(samples) => {
+                        let host_info = HOST_STATE.load();
+
                         // Handle samples by passing them into the pipeline
                         process_samples(
                             &worker_thread_pool,

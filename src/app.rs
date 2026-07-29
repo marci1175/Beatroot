@@ -8,13 +8,8 @@ use parking_lot::{Mutex, RwLock};
 
 use crate::{
     audio::{
-        lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread},
-        playback::{FXMap, HostInformation, MasterPlaybackThread},
-    },
-    internals::{endpoint::check_for_update, utils::ExactLengthBuffer},
-    plugins::{PluginManager, create_plugin_state_writer, initialize_fxmap_nodes},
-    project_manager::open_project,
-    ui::{
+        host::{HOST_STATE, HostInformation}, lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread}, playback::{FXMap, MasterPlaybackThread},
+    }, internals::{endpoint::check_for_update, utils::ExactLengthBuffer}, plugins::{PluginManager, create_plugin_state_writer, initialize_fxmap_nodes}, project_manager::open_project, ui::{
         panels::lib::{GlobalState, Panel, PanelStates, create_panels},
         windows::WindowsManager,
     },
@@ -96,13 +91,16 @@ impl Default for Application {
         // Get config of host
         let host_cfg = host_audio.sink.config();
 
+        // Get host default parameters for playback 
+        let sample_rate = host_cfg.sample_rate().get();
+        let channel_count = host_cfg.channel_count().get();
+
+        // Update HostState with the host's default playback parameters
+        HOST_STATE.store(Arc::new(HostInformation::new(sample_rate, channel_count)));
+
         // Create master playback handler
         // This runs the more complicated playbacks and handles the playlist's playback.
         let master_playback_handler = MasterPlaybackThread::new(
-            HostInformation {
-                sample_rate: host_cfg.sample_rate().get(),
-                channel_count: host_cfg.channel_count().get(),
-            },
             host_audio.sink.mixer().clone(),
             fx_map.clone(),
             plugin_manager.clone(),
@@ -276,6 +274,8 @@ impl App for AppRoot {
             panel.display(
                 ui,
                 self.application.panel_states.clone(),
+                // Create a global state instance all clones should be cheap since they are ran every frame.
+                // (They are cheap since theyre just Arcs)
                 GlobalState {
                     fx_map: self.application.fx_map.clone(),
                     plugin_manager: self.application.plugin_manager.clone(),

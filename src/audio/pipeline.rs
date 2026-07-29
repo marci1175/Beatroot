@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arc_swap::Guard;
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
 use rayon::{
@@ -13,9 +14,7 @@ use rubato::{
 use vst::api::AEffect;
 
 use crate::{
-    audio::playback::{HostInformation, SampleBuffer},
-    plugins::PluginManager,
-    ui::fx_map::NodeMap,
+    audio::{host::HostInformation, playback::SampleBuffer}, plugins::PluginManager, ui::fx_map::NodeMap,
 };
 
 pub const RESAMPLER_CHUNK_SIZE: usize = 1024;
@@ -24,7 +23,7 @@ pub const RESAMPLER_CHUNK_SIZE: usize = 1024;
 pub fn process_samples(
     workers: &ThreadPool,
     original_samples: Vec<SampleBuffer>,
-    host_info: HostInformation,
+    host_info: Guard<Arc<HostInformation>>,
     resampler_params: &SincInterpolationParameters,
     processed_samples: &mut Vec<SampleBuffer>,
     resamplers: Arc<DashMap<u32, Mutex<Async<f32>>>>,

@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use egui::{Align2, Color32, InnerResponse, Panel, RichText, ScrollArea, Sense, Ui};
 use strum::{Display, VariantArray};
 
-use crate::{app::Application, ui::windows::SettingsState};
+use crate::{app::Application, audio::host::{HOST_STATE, HostInformation}, ui::windows::SettingsState};
 
 #[derive(
     Debug,
@@ -17,6 +19,7 @@ use crate::{app::Application, ui::windows::SettingsState};
 pub enum SettingsType {
     #[default]
     General,
+    ProjectGeneral,
     Plugins,
     Playlist,
     Mixer,
@@ -39,7 +42,7 @@ pub fn display_settings_window(
             // Tab selector on the side
             Panel::left("settings_tab_selector")
                 .resizable(false)
-                .show_inside(ui, |ui| {
+                .show(ui, |ui| {
                     // Display all of the types of settings that are available and highlight the current one.
                     ScrollArea::both()
                         .auto_shrink([false, false])
@@ -77,7 +80,9 @@ pub fn display_settings_window(
                     ScrollArea::both().auto_shrink([false, false]).show(
                         ui,
                         |ui| match window_state.current_tab {
-                            SettingsType::General => {}
+                            SettingsType::General => {
+
+                            }
                             SettingsType::Plugins => {}
                             SettingsType::Playlist => {
                                 let mut playlist_guard =
@@ -115,6 +120,40 @@ pub fn display_settings_window(
                             }
                             SettingsType::Mixer => {}
                             SettingsType::Performance => {}
+                            SettingsType::ProjectGeneral => {
+                                ui.label(RichText::from("Audio Settings").strong());
+
+                                ui.horizontal(|ui| {
+                                    // Get the current host's state
+                                    let current_host_state = HOST_STATE.load();
+
+                                    // Current sample rate, compare the modifiable sample rate to the original value
+                                    let original_sample_rate = current_host_state.sample_rate;
+
+                                    // Create a mutable copy of the original sample rate so that we can modify this one.
+                                    let mut current_sample_rate = original_sample_rate;
+
+                                    egui::ComboBox::from_label("Sampling Rate")
+                                        .selected_text(format!("{:?}", current_sample_rate))
+                                        .show_ui(ui, |ui| {
+                                            ui.selectable_value(&mut current_sample_rate, 32000, "32000hz");
+                                            ui.selectable_value(&mut current_sample_rate, 44100, "44100hz");
+                                            ui.selectable_value(&mut current_sample_rate, 48000, "48000hz");
+                                            ui.selectable_value(&mut current_sample_rate, 88200, "88200hz");
+                                            ui.selectable_value(&mut current_sample_rate, 96000, "96000hz");
+                                            ui.selectable_value(&mut current_sample_rate, 176400, "176400hz");
+                                            ui.selectable_value(&mut current_sample_rate, 192000, "192000hz");
+                                        }
+                                    );
+
+                                    // Handle selection change
+                                    if current_sample_rate != original_sample_rate {
+                                        // Modify the current host state
+                                        HOST_STATE.store(Arc::new(HostInformation::new(current_sample_rate, current_host_state.channel_count)));
+                                    }
+                                });
+                                
+                            },
                         },
                     );
                 });
