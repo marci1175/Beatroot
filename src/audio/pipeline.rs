@@ -4,9 +4,12 @@ use arc_swap::Guard;
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
 use rayon::{
-    ThreadPool, iter::{
-        IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, Map, ParallelIterator,
-    }, vec::IntoIter,
+    ThreadPool,
+    iter::{
+        IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
+        IntoParallelRefMutIterator, Map, ParallelIterator,
+    },
+    vec::IntoIter,
 };
 use rodio::source::Zero;
 use rubato::{

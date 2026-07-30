@@ -161,7 +161,7 @@ impl AppRoot {
         app_ctx.application.plugin_manager.write().init();
 
         // Initalize FXMap nodes
-        // Plugin instances are initalized at startup
+        // Plugin instances are initalized at startup, if they are not initialized they will return `NotLoaded`.
         initialize_fxmap_nodes(
             app_ctx.application.plugin_manager.clone(),
             app_ctx.application.fx_map.clone(),

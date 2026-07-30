@@ -21,9 +21,13 @@ use rubato::{
 
 use crate::{
     audio::{
-        host::{HOST_STATE, Tracked},
+        host::{HOST_STATE, HostInformation, Tracked},
+        ingest::SampleIngestManager,
         pipeline::{mix_samples, process_samples},
-    }, internals::utils::Stopper, plugins::PluginManager, ui::{fx_map::NodeMap, panels::playlist::PlaybackState},
+    },
+    internals::utils::Stopper,
+    plugins::PluginManager,
+    ui::{fx_map::NodeMap, panels::playlist::PlaybackState},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -239,20 +243,6 @@ impl Source for SampleBuffer {
 /// Key is the unique id of the sample, value is the effects chain to the sample (nodemap for easier user management).
 pub type FXMap = Arc<DashMap<usize, NodeMap>>;
 
-pub struct SampleIngestManager {
-    /// Samples are provided from a set amount of tracks (cpu core count) in pre-determined buffer sizes.
-    /// For example the samples are ingested from every 10 tracks. So we have to ingest those 10 tracks worth of samples before moving on to the 2nd set of 10 and so forth.
-    /// If there are less than 10 tracks available the remainder of worker threads will be idle.
-    pub ingest_channel: flume::Sender<Vec<SampleBuffer>>,
-
-    /// This is used to mark where the ingest thread should offset sample index to fetch the next sample packet.
-    /// When a sample is received it is immediately incremented (but is only made available after the stopper unlocks) 
-    pub sample_ingest_tracker: Arc<AtomicU64>,
-
-    /// Basically a limiter for the ingest thread, this is controlled by the playback thread to manage the amount of 
-    pub should_ingest: Stopper,
-}
-
 /// This represents the main playback manager in the application.
 /// It used for playing back the playlist's samples.
 /// This handles the main workflow of the raw samples.
@@ -261,7 +251,7 @@ pub struct MasterPlaybackThread {
     /// This is mostly timing related things and the channel which the other thread can use to provide information to the playback thread.  
     sample_ingest: SampleIngestManager,
 
-    /// This is used to track how many samples ([f32]s) have been played back already, this is used for visually indicating where the cursor is in the playlist. 
+    /// This is used to track how many samples ([f32]s) have been played back already, this is used for visually indicating where the cursor is in the playlist.
     sample_playback_tracker: Arc<AtomicU64>,
 
     /// Mixer handle of the host. This is used to append samples to the host's output.
@@ -281,7 +271,7 @@ impl MasterPlaybackThread {
 
         // This will be handed to the thread the other is returned
         let sample_tracker_clone = sample_tracker.clone();
-        
+
         // The stopper is used to signal the ingest thread when to send its new samples
         let should_ingest = Stopper::new(false);
 
@@ -330,13 +320,7 @@ impl MasterPlaybackThread {
             let info = HOST_STATE.load();
 
             // Zero the mixer buffer
-            let mut mixer_buffer: Vec<f32> = vec![
-                0.0;
-                (info.channel_count as usize
-                    * info.sample_rate as usize
-                    * PLAYBACK_BUFFER_LEN_MS)
-                    / 1000
-            ];
+            let mut mixer_buffer: Vec<f32> = vec![0.0; calculate_playback_chunk_size(&info)];
 
             // Drop the guard with the host information
             drop(info);
@@ -359,10 +343,11 @@ impl MasterPlaybackThread {
                         let host_info = HOST_STATE.load();
 
                         // Get the updated buffer size every sample packet
-                        let buffer_size = (host_info.channel_count as usize
-                            * host_info.sample_rate as usize
-                            * PLAYBACK_BUFFER_LEN_MS)
-                            / 1000;
+                        let buffer_size = calculate_playback_chunk_size(&host_info);
+
+                        // Update sample ingest sample offset
+                        sample_ingest_tracker_clone
+                            .fetch_add(buffer_size as u64, std::sync::atomic::Ordering::Relaxed);
 
                         // Handle samples by passing them into the pipeline
                         // This function has a side effect on `processed_sample_buffer`.
@@ -394,7 +379,6 @@ impl MasterPlaybackThread {
 
                         // Clear the buffer
                         mixer_buffer.clear();
-                        // Zero buffer so that
                         mixer_buffer.resize(buffer_size, 0.0);
 
                         // Created a tracked sample which basically dereferences (not actually but all trait function calls go to the inner value) to the inner value.
@@ -431,4 +415,9 @@ impl MasterPlaybackThread {
             sample_playback_tracker: sample_tracker,
         })
     }
+}
+
+pub fn calculate_playback_chunk_size(host_info: &HostInformation) -> usize {
+    (host_info.channel_count as usize * host_info.sample_rate as usize * PLAYBACK_BUFFER_LEN_MS)
+        / 1000
 }

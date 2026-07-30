@@ -26,7 +26,7 @@ use crate::{
 use egui::{Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2, vec2};
 use egui_toast::{Toast, ToastStyle};
 use indexmap::IndexMap;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 
 const TRACK_HEIGHT: f32 = 100.0;
 const MINIMUM_TRACK_HEIGHT: f32 = 10.;
@@ -113,7 +113,7 @@ impl Default for PlaylistPreferences {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaylistState {
     /// Can be modified with the bpm slider.
-    pub bpm: f32,
+    pub bpm: Arc<Mutex<f32>>,
 
     #[serde(skip)]
     /// Indicates the position of the cursor.
@@ -126,10 +126,11 @@ pub struct PlaylistState {
     pub custom_tracks: HashMap<usize, TrackCustomization>,
 
     /// All samples are contained in this map.
-    /// All samples have to line up to one beat (position) and to one track.
+    /// All samples have to line up to one beat (position) (I may change this later) and to one track.
     /// Multiple samples may be present at the same location.
     /// The index of each entry in this map is unique and can be used to manage effects applied on the samples themselves.
-    pub samples: IndexMap<Position, Vec<SampleInstance>>,
+    /// The reason this is an Arc<RwLock> is because the ingest thread runs in a different thread and it would only make sense to be able to hold a separate reference just to the playlist's samples.
+    pub samples: Arc<RwLock<IndexMap<Position, Vec<SampleInstance>>>>,
 
     pub playback_state: PlaybackState,
 
@@ -139,7 +140,7 @@ pub struct PlaylistState {
 impl Default for PlaylistState {
     fn default() -> Self {
         Self {
-            bpm: 120.,
+            bpm: Arc::new(Mutex::new(120.)),
             cursor_offset: Default::default(),
             grid_offset: Default::default(),
             custom_tracks: Default::default(),
@@ -201,7 +202,8 @@ pub fn playlist_ui(
 
         ui.label("bpm");
 
-        let playlist_bpm = &mut state.write().bpm;
+        let write = state.write();
+        let playlist_bpm = &mut *write.bpm.lock();
         ui.add(egui::Slider::new(playlist_bpm, 10.0..=522.0).fixed_decimals(3))
             .context_menu(|ui| {
                 ui.label("Presets");
@@ -402,7 +404,7 @@ fn render_samples(
     let samples = state.read().samples.clone();
 
     // Iterate over all the positions
-    for (pos, samples) in samples {
+    for (pos, samples) in &*samples.read() {
         // Iterate over the samples contained in the positions.
         for (sample_idx, sample) in samples.iter().enumerate() {
             // Check if the track is visible based on the track
@@ -425,7 +427,7 @@ fn render_samples(
             let _track_customization = get_track_customization(state, pos.track, preferences);
 
             // Calculate rectangle length
-            let bps = state.read().bpm / 60.;
+            let bps = *state.read().bpm.lock() as f32 / 60.;
 
             let rectangle_length = symphonia::core::units::Time::from_millis(
                 sample.properties.length as i64,
@@ -554,11 +556,12 @@ fn render_samples(
             // (By default this part only removes the node and when I create a dnd payload that can also insert it.)
             if sample_response.drag_stopped() || sample_response.secondary_clicked() {
                 // Get handle to samples
-                let samples_handle = &mut state.write().samples;
+                let read = state.read();
+                let samples_handle = &mut *read.samples.write();
 
                 // This will get set to true if the position does not contain any samples.
                 // Check if the position contains any samples
-                let should_be_deleted = if let Some(samples_at_pos) = samples_handle.get_mut(&pos) {
+                let should_be_deleted = if let Some(samples_at_pos) = samples_handle.get_mut(pos) {
                     // Remove the sample from that position
                     samples_at_pos.remove(sample_idx);
 
@@ -569,7 +572,7 @@ fn render_samples(
 
                 // Remove position if empty
                 if should_be_deleted {
-                    samples_handle.swap_remove(&pos);
+                    samples_handle.swap_remove(pos);
                 }
             }
 
@@ -817,6 +820,8 @@ fn drop_sample(
     ui_base: &egui::Response,
 ) {
     if let Some(payload) = ui_base.dnd_release_payload::<SampleInstance>() {
+        let id = state.read().samples.read().len();
+
         // Get cursor position
         if let Some(cursor) = ui.input(|i| i.pointer.hover_pos()) {
             // Find starting beat position on the x axis (index into beat_lines)
@@ -854,7 +859,7 @@ fn drop_sample(
 
                 // If we do have this sample then insert into playlist accordingly
                 SampleInstance {
-                    id: state.read().samples.len(),
+                    id,
                     name: sample_info.alias.clone(),
                     color: {
                         // If the color of this sample has been modified, the new color should be displayed when reinserted.
@@ -905,7 +910,7 @@ fn drop_sample(
                     );
 
                 SampleInstance {
-                    id: state.read().samples.len(),
+                    id,
                     name: payload.name.clone(),
                     color: random_color,
                     path: payload.path.clone(),
@@ -920,7 +925,8 @@ fn drop_sample(
                 beat: absolute_beat_pos,
             };
 
-            let samples_handle = &mut state.write().samples;
+            let read = state.read();
+            let samples_handle = &mut *read.samples.write();
 
             // If there are already samples at that location we can append this sample to that specific location
             if let Some(samples) = samples_handle.get_mut(&sample_position) {
@@ -972,7 +978,7 @@ fn hover_sample(
                 get_track_customization(state, absolute_track_idx, preferences);
 
             // Calculate rectangle length
-            let bps = state.read().bpm / 60.;
+            let bps = *state.read().bpm.lock() / 60.;
 
             // This is basically secs / bps * beat_width
             let rectangle_length =

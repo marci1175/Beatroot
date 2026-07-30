@@ -86,7 +86,7 @@ pub fn path_to_number(path: &PathBuf) -> u64 {
 
 use std::sync::{Arc, Condvar, Mutex};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Stopper {
     inner: Arc<(Mutex<bool>, Condvar)>,
 }
