@@ -1,9 +1,9 @@
 use std::sync::{Arc, LazyLock, atomic::AtomicU64};
 
 use arc_swap::ArcSwap;
-use rodio::{ChannelCount, Source, cpal::traits::HostTrait};
+use rodio::Source;
 
-use crate::{audio::playback::SampleBuffer, ui::panels::playlist::SampleInstance};
+use crate::audio::playback::SampleBuffer;
 
 ///
 /// Contains information about the host relevant to the playback of media.

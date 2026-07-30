@@ -79,13 +79,62 @@ pub fn create_ingest_thread(
                         let until_sample = (chunk_end_absolute) - sample_pos_absolute;
 
                         // Read and cache the sample
-                        if let Ok(file) = File::open(&sample.path) {
-                            if let Ok(source) = Decoder::try_from(file) {
+                        if let Ok(file) = File::open(&sample.path)
+                            && let Ok(source) = Decoder::try_from(file)
+                        {
+                            let sample_rate = source.sample_rate();
+                            let channels = source.channels();
+
+                            // Collect raw samples
+                            let samples: Vec<f32> = source.collect();
+
+                            // Create cached sample
+                            let cached_sample = SampleBuffer::new(
+                                samples,
+                                sample.id,
+                                sample_rate.into(),
+                                channels.into(),
+                            );
+
+                            // Where in the chunk the real audio should start (rest stays silent)
+                            let offset_in_chunk = chunk_size - until_sample;
+
+                            // Build a full chunk-sized buffer, zero-padded at the front
+                            let mut padded = vec![0.0f32; chunk_size];
+                            let real = cached_sample.clone_sample_range(0..until_sample);
+                            padded[offset_in_chunk..].copy_from_slice(real.samples());
+
+                            ingested_samples.push(SampleBuffer::new(
+                                padded,
+                                sample.id,
+                                sample_rate.into(),
+                                channels.into(),
+                            ));
+
+                            // Store in cache (unpadded, full decode)
+                            cache.insert(sample.id, cached_sample);
+                        }
+                    }
+                    // If the sample is fully in range
+                    else if sample_pos_absolute < chunk_start_absolute {
+                        // Ensure that the sample is cached
+                        if let std::collections::hash_map::Entry::Vacant(e) = cache.entry(sample.id)
+                        {
+                            // Read and cache the sample
+                            // We can ignore the errors here since they wouldve been caught when importing them, but we still dont want to panic nevertheless
+                            if let Ok(file) = File::open(&sample.path)
+                                && let Ok(source) = Decoder::try_from(file)
+                            {
                                 let sample_rate = source.sample_rate();
                                 let channels = source.channels();
 
                                 // Collect raw samples
                                 let samples: Vec<f32> = source.collect();
+
+                                // Check if we should cache the sample
+                                if samples.len() + sample_pos_absolute < chunk_start_absolute {
+                                    continue;
+                                }
 
                                 // Create cached sample
                                 let cached_sample = SampleBuffer::new(
@@ -95,56 +144,8 @@ pub fn create_ingest_thread(
                                     channels.into(),
                                 );
 
-                                // Where in the chunk the real audio should start (rest stays silent)
-                                let offset_in_chunk = chunk_size - until_sample;
-
-                                // Build a full chunk-sized buffer, zero-padded at the front
-                                let mut padded = vec![0.0f32; chunk_size];
-                                let real = cached_sample.clone_sample_range(0..until_sample);
-                                padded[offset_in_chunk..].copy_from_slice(real.samples());
-
-                                ingested_samples.push(SampleBuffer::new(
-                                    padded,
-                                    sample.id,
-                                    sample_rate.into(),
-                                    channels.into(),
-                                ));
-
-                                // Store in cache (unpadded, full decode)
-                                cache.insert(sample.id, cached_sample);
-                            }
-                        }
-                    }
-                    // If the sample is fully in range
-                    else if sample_pos_absolute < chunk_start_absolute {
-                        // Ensure that the sample is cached
-                        if !cache.contains_key(&sample.id) {
-                            // Read and cache the sample
-                            // We can ignore the errors here since they wouldve been caught when importing them, but we still dont want to panic nevertheless
-                            if let Ok(file) = File::open(&sample.path) {
-                                if let Ok(source) = Decoder::try_from(file) {
-                                    let sample_rate = source.sample_rate();
-                                    let channels = source.channels();
-
-                                    // Collect raw samples
-                                    let samples: Vec<f32> = source.collect();
-
-                                    // Check if we should cache the sample
-                                    if samples.len() + sample_pos_absolute < chunk_start_absolute {
-                                        continue;
-                                    }
-
-                                    // Create cached sample
-                                    let cached_sample = SampleBuffer::new(
-                                        samples,
-                                        sample.id,
-                                        sample_rate.into(),
-                                        channels.into(),
-                                    );
-
-                                    // Store in cache
-                                    cache.insert(sample.id, cached_sample);
-                                }
+                                // Store in cache
+                                e.insert(cached_sample);
                             }
                         }
 

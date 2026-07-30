@@ -1,17 +1,15 @@
-use std::{num::NonZero, sync::Arc};
+use std::sync::Arc;
 
-use arc_swap::Guard;
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
 use rayon::{
     ThreadPool,
     iter::{
-        IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
-        IntoParallelRefMutIterator, Map, ParallelIterator,
+        IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, Map,
+        ParallelIterator,
     },
     vec::IntoIter,
 };
-use rodio::source::Zero;
 use rubato::{
     Async, Resampler, SincInterpolationParameters, audioadapter::Adapter,
     audioadapter_buffers::owned::InterleavedOwned,
@@ -177,9 +175,7 @@ fn apply_effects(
                         // This match statement will have a side effect on the samples.
                         match node.node_type() {
                             // Output and input nodes do not do anything
-                            crate::ui::fx_map::NodeType::In | crate::ui::fx_map::NodeType::Out => {
-                                ()
-                            }
+                            crate::ui::fx_map::NodeType::In | crate::ui::fx_map::NodeType::Out => {}
                             // Apply the effect from the external plugin, apply it appropirately to the effect type.
                             crate::ui::fx_map::NodeType::ExternalPlugin {
                                 plugin_instance, ..

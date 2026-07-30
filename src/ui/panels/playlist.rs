@@ -445,7 +445,7 @@ fn render_samples(
             let _track_customization = get_track_customization(state, pos.track, preferences);
 
             // Calculate rectangle length
-            let bps = *state.read().bpm.lock() as f32 / 60.;
+            let bps = *state.read().bpm.lock() / 60.;
 
             let rectangle_length = symphonia::core::units::Time::from_millis(
                 sample.properties.length as i64,

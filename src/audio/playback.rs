@@ -8,7 +8,7 @@ use std::{
     num::{NonZero, NonZeroU32},
     ops::Range,
     sync::{Arc, atomic::AtomicU64},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use dashmap::DashMap;
@@ -28,7 +28,7 @@ use crate::{
     },
     internals::utils::Stopper,
     plugins::PluginManager,
-    ui::{fx_map::NodeMap, panels::playlist::PlaybackState},
+    ui::fx_map::NodeMap,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -179,7 +179,7 @@ impl SampleBuffer {
 
     pub fn replace_from_planar(&mut self, planar: &[Vec<f32>]) {
         let channels = planar.len();
-        let frames = planar.get(0).map_or(0, |c| c.len());
+        let frames = planar.first().map_or(0, |c| c.len());
 
         let mut samples = Vec::with_capacity(frames * channels);
         let mut iters: Vec<_> = planar.iter().map(|c| c.iter()).collect();
