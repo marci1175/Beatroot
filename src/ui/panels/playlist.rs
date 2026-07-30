@@ -403,8 +403,10 @@ fn render_samples(
     // Iterate over the samples and decide which one is in frame.
     let samples = state.read().samples.clone();
 
+    let samples = samples.read().clone();
+
     // Iterate over all the positions
-    for (pos, samples) in &*samples.read() {
+    for (pos, samples) in samples {
         // Iterate over the samples contained in the positions.
         for (sample_idx, sample) in samples.iter().enumerate() {
             // Check if the track is visible based on the track
@@ -561,7 +563,7 @@ fn render_samples(
 
                 // This will get set to true if the position does not contain any samples.
                 // Check if the position contains any samples
-                let should_be_deleted = if let Some(samples_at_pos) = samples_handle.get_mut(pos) {
+                let should_be_deleted = if let Some(samples_at_pos) = samples_handle.get_mut(&pos) {
                     // Remove the sample from that position
                     samples_at_pos.remove(sample_idx);
 
@@ -572,7 +574,7 @@ fn render_samples(
 
                 // Remove position if empty
                 if should_be_deleted {
-                    samples_handle.swap_remove(pos);
+                    samples_handle.swap_remove(&pos);
                 }
             }
 
