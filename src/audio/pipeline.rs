@@ -101,33 +101,37 @@ fn resample(
         original_samples.into_par_iter().map(move |sample| {
             // Resample if needed
             if sample.sample_rate() != host_info.sample_rate {
-                // Get the correct resampler
-                // It is safe to unwrap here since sample rates are checked above.
                 let resampler_guard = resamplers.get_mut(&sample.sample_rate()).unwrap();
-
-                // Lock resampler for worker thread
                 let mut resampler = resampler_guard.lock();
 
-                // Calculate input length
-                let input_len = sample.sample_count() / sample.channels() as usize;
+                let channels = sample.channels() as usize;
+                let input_len = sample.sample_count() / channels;
 
-                // Fetch minimal size of output buffer
                 let output_length = resampler.process_all_needed_output_len(input_len);
+                let mut output_buffer = InterleavedOwned::new(0.0, channels, output_length);
 
-                let mut output_buffer =
-                    InterleavedOwned::new(0.0, sample.channels() as usize, output_length);
-
-                // Resample all samples and load into output buffer.
-                // This function takes all the samples in the desired chunk size and resamples them automatically.
                 let (_input_len, actual_output_len) = resampler
                     .process_all_into_buffer(&sample, &mut output_buffer, input_len, None)
                     .unwrap();
 
-                // Get raw samples of InterleavedOwned
                 let mut raw_samples = output_buffer.take_data();
+                raw_samples.truncate(actual_output_len * channels);
 
-                // Truncate to size
-                raw_samples.truncate(actual_output_len);
+                // How many frames THIS chunk should produce at the target sample rate,
+                // given the resample ratio — independent of whatever the resampler
+                // actually returned.
+                let ratio = host_info.sample_rate as f64 / sample.sample_rate() as f64;
+                let expected_frames = (input_len as f64 * ratio).round() as usize;
+                let expected_len = expected_frames * channels;
+
+                // Force output to exactly the expected length: pad with silence if
+                // short, truncate if long. This keeps every SampleBuffer aligned to
+                // the same chunk boundary regardless of resampler jitter.
+                match raw_samples.len().cmp(&expected_len) {
+                    std::cmp::Ordering::Less => raw_samples.resize(expected_len, 0.0),
+                    std::cmp::Ordering::Greater => raw_samples.truncate(expected_len),
+                    std::cmp::Ordering::Equal => {}
+                }
 
                 SampleBuffer::new(
                     raw_samples,

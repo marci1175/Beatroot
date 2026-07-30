@@ -27,10 +27,11 @@ pub struct PanelStates {
     pub playlist_panel: RwLock<PlaylistState>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GlobalState {
     pub plugin_manager: Arc<RwLock<PluginManager>>,
     pub fx_map: FXMap,
+    pub master_playback: Arc<MasterPlaybackThread>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, strum::EnumDiscriminants)]

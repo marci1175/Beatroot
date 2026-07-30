@@ -122,6 +122,18 @@ impl Stopper {
             stopped = cvar.wait(stopped).unwrap();
         }
     }
+
+    /// Blocks if currently stopped, until another thread calls `go()`.
+    /// Once released, immediately re-stops itself, so only one caller
+    /// passes through per `go()` — subsequent waiters loop back into waiting.
+    pub fn should_wait_once(&self) {
+        let (lock, cvar) = &*self.inner;
+        let mut stopped = lock.lock().unwrap();
+        while *stopped {
+            stopped = cvar.wait(stopped).unwrap();
+        }
+        *stopped = true;
+    }
 }
 
 impl Default for Stopper {

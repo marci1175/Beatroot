@@ -6,6 +6,7 @@ pub const PLAYBACK_BUFFER_LEN_MS: usize = 50;
 
 use std::{
     num::{NonZero, NonZeroU32},
+    ops::Range,
     sync::{Arc, atomic::AtomicU64},
     time::{Duration, Instant},
 };
@@ -191,6 +192,17 @@ impl SampleBuffer {
 
         self.samples = samples;
     }
+
+    pub fn clone_sample_range(&self, range: Range<usize>) -> Self {
+        Self {
+            samples: self.samples[range].to_vec(),
+            sample_rate: self.sample_rate,
+            channels: self.channels,
+            origin_id: self.origin_id,
+            _iterator_idx: self._iterator_idx,
+            recycle_to: self.recycle_to.clone(),
+        }
+    }
 }
 
 impl Drop for SampleBuffer {
@@ -249,10 +261,12 @@ pub type FXMap = Arc<DashMap<usize, NodeMap>>;
 pub struct MasterPlaybackThread {
     /// Contains everything that an ingest thread needs to manage the samples going in into the master playback thread.
     /// This is mostly timing related things and the channel which the other thread can use to provide information to the playback thread.  
-    sample_ingest: SampleIngestManager,
+    pub sample_ingest: SampleIngestManager,
 
     /// This is used to track how many samples ([f32]s) have been played back already, this is used for visually indicating where the cursor is in the playlist.
-    sample_playback_tracker: Arc<AtomicU64>,
+    pub sample_playback_tracker: Arc<AtomicU64>,
+
+    pub playback_stopper: Stopper,
 
     /// Mixer handle of the host. This is used to append samples to the host's output.
     host_mixer: Mixer,
@@ -273,6 +287,7 @@ impl MasterPlaybackThread {
         let sample_tracker_clone = sample_tracker.clone();
 
         // The stopper is used to signal the ingest thread when to send its new samples
+        // By default the ingest thread should run before we lock it on receival of the first sample packet
         let should_ingest = Stopper::new(false);
 
         // This one is moved to the playback thread so that it can control to ingest thread
@@ -288,6 +303,11 @@ impl MasterPlaybackThread {
         // Track where the ingest thread should get the sample packet from (idx + packet_size)
         let sample_ingest_tracker = Arc::new(AtomicU64::new(0));
         let sample_ingest_tracker_clone = sample_ingest_tracker.clone();
+
+        // Controls the main playback thread and blocks the playback thread if signaled, paused by default
+        let playback_stopper = Stopper::new(true);
+
+        let playback_stopper_clone = playback_stopper.clone();
 
         // Create a thread for handling incoming samples
         std::thread::spawn(move || {
@@ -333,10 +353,14 @@ impl MasterPlaybackThread {
             let (buf_return_tx, buf_return_rx) = flume::bounded::<Vec<f32>>(4);
 
             loop {
+                // Check if the main playback thread should stop (user input)
+                playback_stopper_clone.should_wait();
+
                 // Listen for an incoming sample packet
                 match receiver.recv() {
                     Ok(samples) => {
                         // Lock the ingest thread until we have processed most of the samples, we should unlock the stopper after applying effects so that we have plenty time.
+                        // This is redundant since ingest locks itself after passing the stopper
                         should_ingest_clone.stop();
 
                         // Get a reference to the host state for this sample packet
@@ -412,6 +436,7 @@ impl MasterPlaybackThread {
                 should_ingest,
             },
             host_mixer,
+            playback_stopper,
             sample_playback_tracker: sample_tracker,
         })
     }

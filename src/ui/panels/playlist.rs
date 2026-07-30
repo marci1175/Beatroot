@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    audio::playback::MasterPlaybackThread,
+    audio::{host::HOST_STATE, ingest::calculate_beat_pos, playback::MasterPlaybackThread},
     internals::{
         sample::{SampleProperties, generate_sample_waveform},
         utils::find_value_inbetween,
@@ -115,10 +115,6 @@ pub struct PlaylistState {
     /// Can be modified with the bpm slider.
     pub bpm: Arc<Mutex<f32>>,
 
-    #[serde(skip)]
-    /// Indicates the position of the cursor.
-    pub cursor_offset: f32,
-
     /// This indicates how much the user has scrolled.
     pub grid_offset: Vec2,
 
@@ -141,7 +137,6 @@ impl Default for PlaylistState {
     fn default() -> Self {
         Self {
             bpm: Arc::new(Mutex::new(120.)),
-            cursor_offset: Default::default(),
             grid_offset: Default::default(),
             custom_tracks: Default::default(),
             samples: Default::default(),
@@ -166,6 +161,10 @@ pub fn playlist_ui(
     // Get the default track color
     let preferences = state.read().playlist_preferences;
 
+    // Redraw ui always to make the cursor smooth
+    // For some reason i cant just redraw when its playing
+    ui.ctx().request_repaint();
+
     // Draw the main options / tools for this ui
     ui.horizontal(|ui| {
         let current_playback_state = state.read().playback_state.clone();
@@ -175,16 +174,19 @@ pub fn playlist_ui(
             PlaybackState::Playing => {
                 if ui.button("Pause").clicked() {
                     state.write().playback_state = PlaybackState::Paused;
+                    global_state.master_playback.playback_stopper.stop();
                 };
             }
             PlaybackState::Paused => {
                 if ui.button("Unpause").clicked() {
                     state.write().playback_state = PlaybackState::Playing;
+                    global_state.master_playback.playback_stopper.go();
                 };
             }
             PlaybackState::Stopped => {
                 if ui.button("Play").clicked() {
                     state.write().playback_state = PlaybackState::Paused;
+                    global_state.master_playback.playback_stopper.go();
                 }
             }
         }
@@ -193,6 +195,8 @@ pub fn playlist_ui(
         ui.add_enabled_ui(current_playback_state != PlaybackState::Stopped, |ui| {
             if ui.button("Stop").clicked() {
                 state.write().playback_state = PlaybackState::Stopped;
+
+                // Reset player's ingest offset
             }
         });
 
@@ -373,11 +377,23 @@ pub fn playlist_ui(
         &ui_base,
     );
 
-    // Get cursor position (offest)
-    let cursor_offset = state.read().cursor_offset;
+    let sample_rate = HOST_STATE.load().sample_rate as usize;
 
     // Draw cursor on playlist
-    draw_cursor(ui, playlist_rect, grid_offset, cursor_offset, &preferences);
+    draw_cursor(
+        ui,
+        usable_playlist_rect,
+        grid_offset,
+        calculate_beat_pos(
+            *state.read().bpm.lock(),
+            global_state
+                .master_playback
+                .sample_playback_tracker
+                .load(std::sync::atomic::Ordering::Relaxed) as usize,
+            sample_rate,
+        ) * BEAT_WIDTH as f32,
+        &preferences,
+    );
 
     // Capture scroll if hovered
     if ui_base.hovered() {
@@ -1028,7 +1044,7 @@ fn get_track_customization(
 /// Draws main cursor (Indicates where we are in current playlist)
 fn draw_cursor(
     ui: &mut Ui,
-    playlist_rect: Rect,
+    usable_playlist_rect: Rect,
     grid_offset: Vec2,
     cursor_offset: f32,
     preferences: &PlaylistPreferences,
@@ -1036,12 +1052,14 @@ fn draw_cursor(
     ui.painter().line(
         vec![
             Pos2::new(
-                (playlist_rect.left() + cursor_offset + grid_offset.x).min(playlist_rect.right()),
-                playlist_rect.top(),
+                (usable_playlist_rect.left() + cursor_offset + grid_offset.x)
+                    .min(usable_playlist_rect.right()),
+                usable_playlist_rect.top(),
             ),
             Pos2::new(
-                (playlist_rect.left() + cursor_offset + grid_offset.x).min(playlist_rect.right()),
-                playlist_rect.bottom(),
+                (usable_playlist_rect.left() + cursor_offset + grid_offset.x)
+                    .min(usable_playlist_rect.right()),
+                usable_playlist_rect.bottom(),
             ),
         ],
         Stroke::new(STROKE_WIDTH, preferences.cursor_color),

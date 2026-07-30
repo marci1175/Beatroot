@@ -9,6 +9,7 @@ use parking_lot::{Mutex, RwLock};
 use crate::{
     audio::{
         host::{HOST_STATE, HostInformation},
+        ingest::create_ingest_thread,
         lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread},
         playback::{FXMap, MasterPlaybackThread},
     },
@@ -81,13 +82,13 @@ pub struct Application {
 
 impl Default for Application {
     fn default() -> Self {
+        let fx_map = Arc::new(DashMap::new());
+        let plugin_manager = Arc::new(RwLock::new(PluginManager::default()));
+
         // Create the host's audio handle
         let host_audio = Arc::new(
             HostAudioPlayback::new().expect("Failed to acquire host audio playback handle."),
         );
-
-        let fx_map = Arc::new(DashMap::new());
-        let plugin_manager = Arc::new(RwLock::new(PluginManager::default()));
 
         // Create audio playback thread, this thread is only for previewing samples and playing back simple samples.
         // This is not the main playlist playbacker.
@@ -170,6 +171,29 @@ impl AppRoot {
         // Spawn the thread responsible for writing the changes made in the plugins to the nodes
         // NOTICE: This should never panic as there is no way currently to recover this.
         create_plugin_state_writer(app_ctx.application.plugin_manager.clone());
+
+        // Create ingest thread
+        create_ingest_thread(
+            app_ctx
+                .application
+                .master_playback_handler
+                .sample_ingest
+                .clone(),
+            app_ctx
+                .application
+                .panel_states
+                .playlist_panel
+                .read()
+                .bpm
+                .clone(),
+            app_ctx
+                .application
+                .panel_states
+                .playlist_panel
+                .read()
+                .samples
+                .clone(),
+        );
 
         app_ctx
     }
@@ -283,6 +307,7 @@ impl App for AppRoot {
                 GlobalState {
                     fx_map: self.application.fx_map.clone(),
                     plugin_manager: self.application.plugin_manager.clone(),
+                    master_playback: self.application.master_playback_handler.clone(),
                 },
                 self.application.sample_audio_handler.clone(),
                 self.application.master_playback_handler.clone(),
