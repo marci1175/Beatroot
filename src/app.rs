@@ -195,6 +195,10 @@ impl AppRoot {
                 .clone(),
         );
 
+        // Swap FXMap Arc to the correct one
+        // This will make it so that the master playback thread has access to the correct effects map
+        app_ctx.application.master_playback_handler.current_fx_map.swap(app_ctx.application.fx_map.clone());
+
         app_ctx
     }
 }

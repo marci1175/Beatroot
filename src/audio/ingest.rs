@@ -44,6 +44,11 @@ pub fn create_ingest_thread(
         // A cache for samples that are needed in quick succession. (This should be automaitcally cleaned up and managed by the loop below)
         let mut cache: HashMap<usize, SampleBuffer> = HashMap::new();
 
+        // Ids of samples we've already confirmed are fully in the past for the
+        // current chunk window — lets us skip the decode+cache dance entirely
+        // instead of redoing it every tick for notes that already finished.
+        let mut finished: std::collections::HashSet<usize> = std::collections::HashSet::new();
+
         loop {
             // Get latest host info
             let host_info = HOST_STATE.load();
@@ -55,8 +60,12 @@ pub fn create_ingest_thread(
                     let chunk_size = calculate_playback_chunk_size(&host_info);
 
                     // Calculate the sample's absolute position (sample index compared to the entirety of the playlist)
-                    let sample_pos_absolute =
-                        calculate_sample_pos(*bpm.lock(), pos.beat, host_info.sample_rate as usize);
+                    let sample_pos_absolute = calculate_sample_pos(
+                        *bpm.lock(),
+                        pos.beat,
+                        host_info.sample_rate as usize,
+                        host_info.channel_count as usize,
+                    );
 
                     // Fetch from which sample position should we be ingesting from
                     let chunk_start_absolute = ingest_manager
@@ -75,6 +84,10 @@ pub fn create_ingest_thread(
                     else if sample_pos_absolute > chunk_start_absolute
                         && sample_pos_absolute < chunk_end_absolute
                     {
+                        // A note starting fresh in this chunk — clear any stale "finished" mark
+                        // (relevant if the playhead looped back around).
+                        finished.remove(&sample.id);
+
                         // Until which sample position should we fetch samples (from the start)
                         let until_sample = (chunk_end_absolute) - sample_pos_absolute;
 
@@ -117,6 +130,11 @@ pub fn create_ingest_thread(
                     }
                     // If the sample is fully in range
                     else if sample_pos_absolute < chunk_start_absolute {
+                        // Already confirmed finished in an earlier tick — skip decode/cache entirely.
+                        if finished.contains(&sample.id) {
+                            continue;
+                        }
+
                         // Ensure that the sample is cached
                         if let std::collections::hash_map::Entry::Vacant(e) = cache.entry(sample.id)
                         {
@@ -130,11 +148,6 @@ pub fn create_ingest_thread(
 
                                 // Collect raw samples
                                 let samples: Vec<f32> = source.collect();
-
-                                // Check if we should cache the sample
-                                if samples.len() + sample_pos_absolute < chunk_start_absolute {
-                                    continue;
-                                }
 
                                 // Create cached sample
                                 let cached_sample = SampleBuffer::new(
@@ -178,10 +191,12 @@ pub fn create_ingest_thread(
                             }
                         }
 
-                        // If its flagged for deletion, just delete it.
+                        // If its flagged for deletion, mark it as permanently finished for this pass
+                        // through the playlist, instead of just evicting — evicting alone caused
+                        // a full re-decode from disk on every subsequent tick.
                         if should_be_removed {
-                            // Remove cached sample
                             cache.remove(&sample.id);
+                            finished.insert(sample.id);
                         }
                     }
                 }
@@ -200,14 +215,14 @@ pub fn create_ingest_thread(
     });
 }
 
-fn samples_per_beat(bpm: f32, sample_rate: usize) -> f32 {
-    (60.0 / bpm) * sample_rate as f32
+fn samples_per_beat(bpm: f32, sample_rate: usize, channels: usize) -> f32 {
+    (60.0 / bpm) * sample_rate as f32 * channels as f32
 }
 
-pub fn calculate_sample_pos(bpm: f32, beat: usize, sample_rate: usize) -> usize {
-    (beat as f32 * samples_per_beat(bpm, sample_rate)).round() as usize
+pub fn calculate_sample_pos(bpm: f32, beat: usize, sample_rate: usize, channels: usize) -> usize {
+    (beat as f32 * samples_per_beat(bpm, sample_rate, channels)).round() as usize
 }
 
-pub fn calculate_beat_pos(bpm: f32, sample_pos: usize, sample_rate: usize) -> f32 {
-    sample_pos as f32 / samples_per_beat(bpm, sample_rate)
+pub fn calculate_beat_pos(bpm: f32, sample_pos: usize, sample_rate: usize, channels: usize) -> f32 {
+    sample_pos as f32 / samples_per_beat(bpm, sample_rate, channels)
 }

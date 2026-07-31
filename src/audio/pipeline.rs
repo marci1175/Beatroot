@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arc_swap::ArcSwapAny;
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
 use rayon::{
@@ -24,6 +25,8 @@ use crate::{
 
 pub const RESAMPLER_CHUNK_SIZE: usize = 1024;
 
+// pub struct Resampler
+
 /// Processes samples - this means that this function ensures that all samples match the host's sample rate and desired output.
 pub fn process_samples(
     workers: &ThreadPool,
@@ -32,7 +35,7 @@ pub fn process_samples(
     resampler_params: &SincInterpolationParameters,
     processed_samples: &mut Vec<SampleBuffer>,
     resamplers: Arc<DashMap<u32, Mutex<Async<f32>>>>,
-    effects_map: Arc<DashMap<usize, NodeMap>>,
+    effects_map: Arc<ArcSwapAny<Arc<DashMap<usize, NodeMap>>>>,
     _plugin_manager: Arc<RwLock<PluginManager>>,
 ) -> anyhow::Result<()> {
     // Clear processed sample buffer, this does not reallocate (doesnt create a new vector, so this is pretty quick)
@@ -148,12 +151,13 @@ fn resample(
 fn apply_effects(
     workers: &ThreadPool,
     samples: &mut Vec<SampleBuffer>,
-    effects_map: Arc<DashMap<usize, NodeMap>>,
+    effects_map: Arc<ArcSwapAny<Arc<DashMap<usize, NodeMap>>>>,
 ) {
     workers.install(|| {
+        let fx_map = effects_map.load();
         samples.par_iter_mut().for_each(|sample| {
             // Lookup the fx chain for the sample if there is one
-            if let Some(entry) = effects_map.get(&sample.origin_id()) {
+            if let Some(entry) = fx_map.get(&sample.origin_id()) {
                 // Get the effects chain
                 let fx = entry.value();
 
@@ -233,10 +237,7 @@ fn apply_effects(
                                         let input_ptrs: Vec<*const f32> =
                                             inputs.iter_mut().map(|c| c.as_ptr()).collect();
                                         let mut output_ptrs: Vec<*mut f32> = outputs
-                                            [chunk_idx..chunk_idx + current_chunk_size]
-                                            .iter_mut()
-                                            .map(|c| c.as_mut_ptr())
-                                            .collect();
+                                            .iter_mut().map(|c| c.as_mut_ptr()).collect();
 
                                         // Apply effects
                                         (aeffect.processReplacing)(
@@ -259,7 +260,7 @@ fn apply_effects(
                 }
 
                 // Replace sample with the output of the effects chain
-                sample.replace_from_planar(&planar);
+                sample.replace_from_planar(&outputs);
             }
         })
     });

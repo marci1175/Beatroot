@@ -1,6 +1,7 @@
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
     path::PathBuf,
+    sync::atomic::AtomicUsize,
 };
 
 use rand::{
@@ -139,5 +140,18 @@ impl Stopper {
 impl Default for Stopper {
     fn default() -> Self {
         Self::new(true)
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct GlobalID(AtomicUsize);
+
+impl GlobalID {
+    pub const fn new(starting_num: usize) -> Self {
+        Self(AtomicUsize::new(starting_num))
+    }
+
+    pub fn get_id(&self) -> usize {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 }

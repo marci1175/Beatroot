@@ -920,7 +920,7 @@ fn draggable_sample_label(
     ui.dnd_drag_source(
         Id::new(&*path),
         SampleInstance {
-            id: playlist_state.read().samples.read().len(),
+            id: playlist_state.read().get_sample_count(),
             name: name.to_string_lossy().to_string(),
             color: {
                 // Try looking up the workspace if we have already imported this sample

@@ -11,6 +11,7 @@ use std::{
     time::Duration,
 };
 
+use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
 use rayon::ThreadPoolBuilder;
@@ -270,12 +271,19 @@ pub struct MasterPlaybackThread {
 
     /// Mixer handle of the host. This is used to append samples to the host's output.
     host_mixer: Mixer,
+
+    /// The current effects map the master playback thread has access to.
+    /// The reason this is an arcswap is because at startup new allocations are made to the effects map, and the arc cannot be serialized. (Thus needing to be swapped at every startup to the valid fxmap.)
+    pub current_fx_map: Arc<arc_swap::ArcSwapAny<Arc<DashMap<usize, NodeMap>>>>,
 }
 
 impl MasterPlaybackThread {
     pub fn new(
         host_mixer: Mixer,
+
+        // Reference to the Effects map in the application.
         fx_map: FXMap,
+        
         plugin_manager: Arc<RwLock<PluginManager>>,
     ) -> anyhow::Result<Self> {
         // Create a thread pool with the default settings
@@ -298,6 +306,7 @@ impl MasterPlaybackThread {
         let host_mixer_clone = host_mixer.clone();
 
         // Create a map of effects which the samples will be applied with.
+        let fx_map: Arc<arc_swap::ArcSwapAny<Arc<DashMap<usize, NodeMap>>>> = Arc::new(ArcSwap::new(fx_map));
         let fx_map_clone = fx_map.clone();
 
         // Track where the ingest thread should get the sample packet from (idx + packet_size)
@@ -438,6 +447,7 @@ impl MasterPlaybackThread {
             host_mixer,
             playback_stopper,
             sample_playback_tracker: sample_tracker,
+            current_fx_map: fx_map,
         })
     }
 }

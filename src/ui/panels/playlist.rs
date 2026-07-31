@@ -6,6 +6,8 @@ use std::{
     sync::Arc,
 };
 
+// static GLOBAL_SAMPLE_ID: GlobalID = GlobalID::new(0);
+
 use crate::{
     audio::{host::HOST_STATE, ingest::calculate_beat_pos, playback::MasterPlaybackThread},
     internals::{
@@ -131,6 +133,16 @@ pub struct PlaylistState {
     pub playback_state: PlaybackState,
 
     pub playlist_preferences: PlaylistPreferences,
+}
+
+impl PlaylistState {
+    pub fn get_sample_count(&self) -> usize {
+        self.samples
+            .read()
+            .iter()
+            .map(|(_pos, samples)| samples.len())
+            .sum()
+    }
 }
 
 impl Default for PlaylistState {
@@ -377,7 +389,7 @@ pub fn playlist_ui(
         &ui_base,
     );
 
-    let sample_rate = HOST_STATE.load().sample_rate as usize;
+    let host = HOST_STATE.load();
 
     // Draw cursor on playlist
     draw_cursor(
@@ -390,7 +402,8 @@ pub fn playlist_ui(
                 .master_playback
                 .sample_playback_tracker
                 .load(std::sync::atomic::Ordering::Relaxed) as usize,
-            sample_rate,
+            host.sample_rate as usize,
+            host.channel_count as usize,
         ) * BEAT_WIDTH as f32,
         &preferences,
     );
@@ -838,7 +851,7 @@ fn drop_sample(
     ui_base: &egui::Response,
 ) {
     if let Some(payload) = ui_base.dnd_release_payload::<SampleInstance>() {
-        let id = state.read().samples.read().len();
+        let id = state.read().get_sample_count();
 
         // Get cursor position
         if let Some(cursor) = ui.input(|i| i.pointer.hover_pos()) {
