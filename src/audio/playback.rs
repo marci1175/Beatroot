@@ -381,6 +381,9 @@ impl MasterPlaybackThread {
                         // Update sample ingest sample offset
                         sample_ingest_tracker_clone
                             .fetch_add(buffer_size as u64, std::sync::atomic::Ordering::Relaxed);
+                        
+                        // Signal the ingest to send the new packet
+                        should_ingest_clone.go();
 
                         // Handle samples by passing them into the pipeline
                         // This function has a side effect on `processed_sample_buffer`.
@@ -395,9 +398,6 @@ impl MasterPlaybackThread {
                             plugin_manager.clone(),
                         )
                         .expect("Failed to process sample in master playback thread.");
-
-                        // Signal the ingest to send the new packet
-                        should_ingest_clone.go();
 
                         // Mix all of the samples into `mixer_buffer`
                         mix_samples(&mut mixer_buffer, &processed_sample_buffer);

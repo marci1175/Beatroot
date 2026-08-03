@@ -167,7 +167,7 @@ fn apply_effects(
 
                 // Create outputs buffer (this may be resized later but always made bigger if needed)
                 let mut outputs: Vec<Vec<f32>> =
-                    vec![vec![0.0; sample.frames()]; sample.channels() as usize];
+                    planar.clone();
 
                 // Check if the current fx sequence is valid
                 if let Ok(fx_chain) = fx.create_effect_sequence() {

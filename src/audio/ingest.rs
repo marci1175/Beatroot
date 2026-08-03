@@ -81,8 +81,8 @@ pub fn create_ingest_thread(
                         continue;
                     }
                     // If the sample is only partially in range
-                    else if sample_pos_absolute > chunk_start_absolute
-                        && sample_pos_absolute < chunk_end_absolute
+                    else if sample_pos_absolute >= chunk_start_absolute
+                        && sample_pos_absolute <= chunk_end_absolute
                     {
                         // A note starting fresh in this chunk — clear any stale "finished" mark
                         // (relevant if the playhead looped back around).
