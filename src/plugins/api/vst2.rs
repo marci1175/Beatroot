@@ -1,7 +1,20 @@
-use std::os::raw::c_char;
+use std::{
+    os::raw::c_char, sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicI32, AtomicU64},
+    }, time::{Instant, SystemTime, UNIX_EPOCH},
+};
 
 use num_enum::TryFromPrimitive;
+use parking_lot::Mutex;
 use vst::api::AEffect;
+
+use crate::{
+    audio::{host::HOST_STATE, ingest::calculate_beat_pos}, internals::utils::Stopper, plugins::api::vst2::vst_time_info_flags::{
+        K_VST_BARS_VALID, K_VST_PPQ_POS_VALID, K_VST_TEMPO_VALID, K_VST_TIME_SIG_VALID,
+        K_VST_TRANSPORT_PLAYING,
+    },
+};
 
 // ===================================================================
 // Base integer types
@@ -190,6 +203,7 @@ pub enum AudioMasterOpcode {
 // Field order matches vst2.h lines ~3635-3709.
 // ===================================================================
 
+#[derive(Debug, Default)]
 #[repr(C)]
 pub struct VstTimeInfo {
     /// Current position in audio samples (always valid)
@@ -220,6 +234,73 @@ pub struct VstTimeInfo {
     pub samples_to_next_clock: VstInt32,
     /// See VstTimeInfoFlags below
     pub flags: VstInt32,
+}
+
+pub struct AtomicVstInfo {
+    /// Current position in audio samples (always valid)
+    pub sample_pos: Arc<AtomicU64>,
+    /// Current tempo in BPM
+    pub tempo: Arc<Mutex<f64>>,
+    /// See VstTimeInfoFlags below
+    pub time_info_flags: AtomicI32,
+    /// Time signature numerator (e.g. 3 for 3/4)
+    pub time_sig_numerator: Arc<Mutex<i32>>,
+    /// Time signature denominator (e.g. 4 for 3/4)
+    pub time_sig_denominator: Arc<Mutex<i32>>,
+    /// Stopper handle for the master audio playback thread, this can be used to check whether the master audio thread is currently paused.
+    pub playback_stopper: Stopper,
+}
+
+impl AtomicVstInfo {
+    pub fn create_time_info(&self) -> VstTimeInfo {
+        let host = HOST_STATE.load();
+        let bpm = *self.tempo.lock();
+        let sample_pos = self.sample_pos.load(std::sync::atomic::Ordering::Relaxed);
+        let ppq_pos = calculate_beat_pos(
+            bpm,
+            sample_pos as usize,
+            host.sample_rate as usize,
+            host.channel_count as usize,
+        ) as f64;
+
+        let time_sig_numerator = *self.time_sig_numerator.lock();
+        let time_sig_denominator = *self.time_sig_denominator.lock();
+        let beats_per_bar = time_sig_numerator as f64;
+        let bar_start_pos = (ppq_pos / beats_per_bar).floor() * beats_per_bar;
+
+        let mut flags = self.time_info_flags.load(std::sync::atomic::Ordering::Relaxed);
+
+        if self.playback_stopper.is_stopped() {
+            flags |= K_VST_TRANSPORT_PLAYING;
+        }
+
+        VstTimeInfo {
+            sample_pos: sample_pos as f64,
+            sample_rate: host.sample_rate as f64,
+            nano_seconds: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as f64,
+            ppq_pos,
+            tempo: bpm,
+            bar_start_pos,
+
+            cycle_start_pos: 0.0,
+            cycle_end_pos: 0.0,
+
+            time_sig_numerator,
+            time_sig_denominator,
+
+            // Zero these since we dont support them right now
+            smpte_offset: 0,
+            smpte_frame_rate: 0,
+
+            // App doesnt support MIDI yet, so there are no MIDI clocks.
+            samples_to_next_clock: 0,
+
+            flags,
+        }
+    }
 }
 
 /// VstTimeInfoFlags - bits in VstTimeInfo.flags and the `value` argument
@@ -537,4 +618,53 @@ pub unsafe fn get_vendor_name(effect: *mut AEffect) -> String {
 
 pub unsafe fn get_product_name(effect: *mut AEffect) -> String {
     unsafe { get_vst2_string(effect, EFF_GET_PRODUCT_STRING, 64 + 1) }
+}
+
+/// Bitflags for `VstTimeInfo::flags`.
+/// Indicates transport state and which fields in the struct are valid.
+pub mod vst_time_info_flags {
+    /// Transport state has changed since the last time info request.
+    pub const K_VST_TRANSPORT_CHANGED: i32 = 1 << 0;
+
+    /// Transport is currently playing (as opposed to stopped/paused).
+    pub const K_VST_TRANSPORT_PLAYING: i32 = 1 << 1;
+
+    /// A loop/cycle region is currently active.
+    pub const K_VST_TRANSPORT_CYCLE_ACTIVE: i32 = 1 << 2;
+
+    /// Transport is currently recording.
+    pub const K_VST_TRANSPORT_RECORDING: i32 = 1 << 3;
+
+    /// Bit 4 is reserved/unused in the VST 2.4 spec.
+    /// Bit 5 is reserved/unused in the VST 2.4 spec.
+
+    /// Host is writing automation.
+    pub const K_VST_AUTOMATION_WRITING: i32 = 1 << 6;
+
+    /// Host is reading automation.
+    pub const K_VST_AUTOMATION_READING: i32 = 1 << 7;
+
+    /// `nano_seconds` field is valid.
+    pub const K_VST_NANOS_VALID: i32 = 1 << 8;
+
+    /// `ppq_pos` field is valid.
+    pub const K_VST_PPQ_POS_VALID: i32 = 1 << 9;
+
+    /// `tempo` field is valid.
+    pub const K_VST_TEMPO_VALID: i32 = 1 << 10;
+
+    /// `bar_start_pos` field is valid.
+    pub const K_VST_BARS_VALID: i32 = 1 << 11;
+
+    /// `cycle_start_pos` / `cycle_end_pos` fields are valid.
+    pub const K_VST_CYCLE_POS_VALID: i32 = 1 << 12;
+
+    /// `time_sig_numerator` / `time_sig_denominator` fields are valid.
+    pub const K_VST_TIME_SIG_VALID: i32 = 1 << 13;
+
+    /// `smpte_offset` / `smpte_frame_rate` fields are valid.
+    pub const K_VST_SMPTE_VALID: i32 = 1 << 14;
+
+    /// `samples_to_next_clock` field is valid.
+    pub const K_VST_CLOCK_VALID: i32 = 1 << 15;
 }

@@ -1,6 +1,10 @@
-use crate::plugins::api::vst2::{AudioMasterOpcode, VstFileSelect, VstOpcode};
+use crate::plugins::api::vst2::{
+    AtomicVstInfo, AudioMasterOpcode, VstFileSelect, VstOpcode, VstTimeInfo,
+};
 use crossbeam_channel::{Receiver, Sender, unbounded};
+use parking_lot::RwLock;
 use std::{
+    cell::RefCell,
     ffi::{c_str, c_void},
     sync::LazyLock,
 };
@@ -10,6 +14,23 @@ use vst::api::AEffect;
 /// These "requests" contain which plugin requested and what.
 pub static PARAMETER_CHANNEL: LazyLock<(Sender<Parameter>, Receiver<Parameter>)> =
     LazyLock::new(unbounded);
+
+pub static INFO_STORAGE: LazyLock<RwLock<Option<AtomicVstInfo>>> =
+    LazyLock::new(|| RwLock::new(None));
+
+thread_local! {
+    /// We need to create this thread local static so that we can return a valid reference to the VstTimeInfo instance after creation. (We would otherwise create a dangling pointer when the code returns.)
+    static TIME_INFO_SNAPSHOT: RefCell<VstTimeInfo> = RefCell::new(VstTimeInfo::default());
+}
+
+pub fn get_time_info(snapshot: &AtomicVstInfo) -> isize {
+    let time_info = snapshot.create_time_info();
+
+    TIME_INFO_SNAPSHOT.with(|cell| {
+        *cell.borrow_mut() = time_info; // move the fresh struct into thread-local storage
+        cell.as_ptr() as isize // pointer into that storage — valid after we return
+    })
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Parameter {
@@ -71,26 +92,12 @@ pub extern "C" fn host_callback(
             AudioMasterOpcode::PinConnected => 0,
             AudioMasterOpcode::WantMidi => 1,
             AudioMasterOpcode::GetTime => {
-                // let time_info = VstTimeInfo {
-                //     sample_pos: todo!(),
-                //     sample_rate: todo!(),
-                //     nano_seconds: todo!(),
-                //     ppq_pos: todo!(),
-                //     tempo: todo!(),
-                //     bar_start_pos: todo!(),
-                //     cycle_start_pos: todo!(),
-                //     cycle_end_pos: todo!(),
-                //     time_sig_numerator: todo!(),
-                //     time_sig_denominator: todo!(),
-                //     smpte_offset: todo!(),
-                //     smpte_frame_rate: todo!(),
-                //     samples_to_next_clock: todo!(),
-                //     flags: todo!(),
-                // };
-
-                // return &time_info as *const _ as isize;
-
-                0
+                let snapshot = INFO_STORAGE.read();
+                if let Some(storage) = &*snapshot {
+                    get_time_info(storage)
+                } else {
+                    0
+                }
             }
             AudioMasterOpcode::ProcessEvents => {
                 // asd

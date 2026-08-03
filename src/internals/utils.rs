@@ -124,6 +124,12 @@ impl Stopper {
         }
     }
 
+    /// Returns `true` if currently stopped, `false` otherwise. Never blocks.
+    pub fn is_stopped(&self) -> bool {
+        let (lock, _) = &*self.inner;
+        *lock.lock().unwrap()
+    }
+
     /// Blocks if currently stopped, until another thread calls `go()`.
     /// Once released, immediately re-stops itself, so only one caller
     /// passes through per `go()` — subsequent waiters loop back into waiting.

@@ -35,7 +35,7 @@ pub struct SampleIngestManager {
 
 pub fn create_ingest_thread(
     ingest_manager: SampleIngestManager,
-    bpm: Arc<Mutex<f32>>,
+    bpm: Arc<Mutex<f64>>,
     playlist: Arc<RwLock<IndexMap<Position, Vec<SampleInstance>>>>,
 ) {
     std::thread::spawn(move || {
@@ -215,14 +215,14 @@ pub fn create_ingest_thread(
     });
 }
 
-fn samples_per_beat(bpm: f32, sample_rate: usize, channels: usize) -> f32 {
-    (60.0 / bpm) * sample_rate as f32 * channels as f32
+fn samples_per_beat(bpm: f64, sample_rate: usize, channels: usize) -> f64 {
+    (60.0 / bpm) * sample_rate as f64 * channels as f64
 }
 
-pub fn calculate_sample_pos(bpm: f32, beat: usize, sample_rate: usize, channels: usize) -> usize {
-    (beat as f32 * samples_per_beat(bpm, sample_rate, channels)).round() as usize
+pub fn calculate_sample_pos(bpm: f64, beat: usize, sample_rate: usize, channels: usize) -> usize {
+    (beat as f64 * samples_per_beat(bpm, sample_rate, channels)).round() as usize
 }
 
-pub fn calculate_beat_pos(bpm: f32, sample_pos: usize, sample_rate: usize, channels: usize) -> f32 {
-    sample_pos as f32 / samples_per_beat(bpm, sample_rate, channels)
+pub fn calculate_beat_pos(bpm: f64, sample_pos: usize, sample_rate: usize, channels: usize) -> f64 {
+    sample_pos as f64 / samples_per_beat(bpm, sample_rate, channels)
 }

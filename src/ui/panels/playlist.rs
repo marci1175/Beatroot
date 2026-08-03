@@ -115,7 +115,7 @@ impl Default for PlaylistPreferences {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaylistState {
     /// Can be modified with the bpm slider.
-    pub bpm: Arc<Mutex<f32>>,
+    pub bpm: Arc<Mutex<f64>>,
 
     /// This indicates how much the user has scrolled.
     pub grid_offset: Vec2,
@@ -133,6 +133,9 @@ pub struct PlaylistState {
     pub playback_state: PlaybackState,
 
     pub playlist_preferences: PlaylistPreferences,
+
+    pub time_signature_numerator: Arc<Mutex<i32>>,
+    pub time_signature_denominator: Arc<Mutex<i32>>,
 }
 
 impl PlaylistState {
@@ -154,11 +157,13 @@ impl Default for PlaylistState {
             samples: Default::default(),
             playback_state: Default::default(),
             playlist_preferences: PlaylistPreferences::default(),
+            time_signature_numerator: Arc::new(Mutex::new(4)),
+            time_signature_denominator: Arc::new(Mutex::new(4))
         }
     }
 }
 
-const BPM_PRESETS: &[f32] = &[
+const BPM_PRESETS: &[f64] = &[
     60.0, 70.0, 80.0, 90.0, 100.00, 110.0, 120.0, 128.0, 140.0, 165.0, 174.0,
 ];
 
@@ -404,7 +409,8 @@ pub fn playlist_ui(
                 .load(std::sync::atomic::Ordering::Relaxed) as usize,
             host.sample_rate as usize,
             host.channel_count as usize,
-        ) * BEAT_WIDTH as f32,
+        ) as f32
+            * BEAT_WIDTH as f32,
         &preferences,
     );
 
@@ -460,12 +466,11 @@ fn render_samples(
             // Calculate rectangle length
             let bps = *state.read().bpm.lock() / 60.;
 
-            let rectangle_length = symphonia::core::units::Time::from_millis(
-                sample.properties.length as i64,
-            )
-            .as_secs() as f32
-                * bps
-                * BEAT_WIDTH as f32;
+            let rectangle_length =
+                (symphonia::core::units::Time::from_millis(sample.properties.length as i64)
+                    .as_secs() as f64
+                    * bps
+                    * BEAT_WIDTH as f64) as f32;
 
             // If the sample isn't long enough to reach onto the screen, skip it.
             if start_pos + rectangle_length < playlist_rect.left() {
@@ -1014,9 +1019,9 @@ fn hover_sample(
             // This is basically secs / bps * beat_width
             let rectangle_length =
                 symphonia::core::units::Time::from_millis(payload.properties.length as i64)
-                    .as_secs() as f32
+                    .as_secs() as f64
                     * bps
-                    * BEAT_WIDTH as f32;
+                    * BEAT_WIDTH as f64;
 
             if relative_track_pos >= track_lines.len() {
                 return;
@@ -1025,7 +1030,7 @@ fn hover_sample(
             let rect_points = [
                 Pos2::new(starting_x, starting_y),
                 Pos2::new(
-                    (starting_x + rectangle_length).min(playlist_rect.right()),
+                    (starting_x + rectangle_length as f32).min(playlist_rect.right()),
                     (starting_y + track_customization.height)
                         .min(track_lines[relative_track_pos][0].y),
                 ),

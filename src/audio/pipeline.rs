@@ -166,8 +166,7 @@ fn apply_effects(
                 let planar = sample.deinterleave();
 
                 // Create outputs buffer (this may be resized later but always made bigger if needed)
-                let mut outputs: Vec<Vec<f32>> =
-                    planar.clone();
+                let mut outputs: Vec<Vec<f32>> = planar.clone();
 
                 // Check if the current fx sequence is valid
                 if let Ok(fx_chain) = fx.create_effect_sequence() {
@@ -236,8 +235,8 @@ fn apply_effects(
                                         // Create a list of pointers for both, this will get passed into the plugin
                                         let input_ptrs: Vec<*const f32> =
                                             inputs.iter_mut().map(|c| c.as_ptr()).collect();
-                                        let mut output_ptrs: Vec<*mut f32> = outputs
-                                            .iter_mut().map(|c| c.as_mut_ptr()).collect();
+                                        let mut output_ptrs: Vec<*mut f32> =
+                                            outputs.iter_mut().map(|c| c.as_mut_ptr()).collect();
 
                                         // Apply effects
                                         (aeffect.processReplacing)(

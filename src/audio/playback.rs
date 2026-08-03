@@ -283,7 +283,7 @@ impl MasterPlaybackThread {
 
         // Reference to the Effects map in the application.
         fx_map: FXMap,
-        
+
         plugin_manager: Arc<RwLock<PluginManager>>,
     ) -> anyhow::Result<Self> {
         // Create a thread pool with the default settings
@@ -306,7 +306,8 @@ impl MasterPlaybackThread {
         let host_mixer_clone = host_mixer.clone();
 
         // Create a map of effects which the samples will be applied with.
-        let fx_map: Arc<arc_swap::ArcSwapAny<Arc<DashMap<usize, NodeMap>>>> = Arc::new(ArcSwap::new(fx_map));
+        let fx_map: Arc<arc_swap::ArcSwapAny<Arc<DashMap<usize, NodeMap>>>> =
+            Arc::new(ArcSwap::new(fx_map));
         let fx_map_clone = fx_map.clone();
 
         // Track where the ingest thread should get the sample packet from (idx + packet_size)
@@ -381,7 +382,7 @@ impl MasterPlaybackThread {
                         // Update sample ingest sample offset
                         sample_ingest_tracker_clone
                             .fetch_add(buffer_size as u64, std::sync::atomic::Ordering::Relaxed);
-                        
+
                         // Signal the ingest to send the new packet
                         should_ingest_clone.go();
 
