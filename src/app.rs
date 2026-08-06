@@ -1,4 +1,7 @@
-use std::{path::PathBuf, sync::{Arc, atomic::AtomicI32}};
+use std::{
+    path::PathBuf,
+    sync::{Arc, atomic::AtomicI32},
+};
 
 use dashmap::DashMap;
 use eframe::{App, CreationContext};
@@ -7,14 +10,27 @@ use egui_toast::Toasts;
 use parking_lot::{Mutex, RwLock};
 
 use crate::{
-    app, audio::{
+    app,
+    audio::{
         host::{HOST_STATE, HostInformation},
         ingest::create_ingest_thread,
         lib::{AudioThreadHandler, HostAudioPlayback, create_playback_thread},
         playback::{FXMap, MasterPlaybackThread},
-    }, internals::{endpoint::check_for_update, utils::ExactLengthBuffer}, plugins::{
-        PluginManager, api::vst2::{AtomicVstInfo, VstTimeInfo, vst_time_info_flags::{K_VST_BARS_VALID, K_VST_PPQ_POS_VALID, K_VST_TEMPO_VALID, K_VST_TIME_SIG_VALID}}, create_plugin_state_writer, initialize_fxmap_nodes, vst2::INFO_STORAGE,
-    }, project_manager::open_project, ui::{
+    },
+    internals::{endpoint::check_for_update, utils::ExactLengthBuffer},
+    plugins::{
+        PluginManager,
+        api::vst2::{
+            AtomicVstInfo, VstTimeInfo,
+            vst_time_info_flags::{
+                K_VST_BARS_VALID, K_VST_PPQ_POS_VALID, K_VST_TEMPO_VALID, K_VST_TIME_SIG_VALID,
+            },
+        },
+        create_plugin_state_writer, initialize_fxmap_nodes,
+        vst2::INFO_STORAGE,
+    },
+    project_manager::open_project,
+    ui::{
         panels::lib::{GlobalState, Panel, PanelStates, create_panels},
         windows::WindowsManager,
     },
@@ -203,17 +219,39 @@ impl AppRoot {
             .current_fx_map
             .swap(app_ctx.application.fx_map.clone());
 
-        let time_sig_numerator = app_ctx.application.panel_states.playlist_panel.read().time_signature_numerator.clone();
-        let time_sig_denominator = app_ctx.application.panel_states.playlist_panel.read().time_signature_denominator.clone();
+        let time_sig_numerator = app_ctx
+            .application
+            .panel_states
+            .playlist_panel
+            .read()
+            .time_signature_numerator
+            .clone();
+        let time_sig_denominator = app_ctx
+            .application
+            .panel_states
+            .playlist_panel
+            .read()
+            .time_signature_denominator
+            .clone();
 
         // Set storage for Vst2 plugin callback
         *INFO_STORAGE.write() = Some(AtomicVstInfo {
-            sample_pos: app_ctx.application.master_playback_handler.sample_playback_tracker.clone(),
+            sample_pos: app_ctx
+                .application
+                .master_playback_handler
+                .sample_playback_tracker
+                .clone(),
             tempo: bpm.clone(),
-            time_info_flags: AtomicI32::new(K_VST_PPQ_POS_VALID | K_VST_TEMPO_VALID | K_VST_TIME_SIG_VALID | K_VST_BARS_VALID),
+            time_info_flags: AtomicI32::new(
+                K_VST_PPQ_POS_VALID | K_VST_TEMPO_VALID | K_VST_TIME_SIG_VALID | K_VST_BARS_VALID,
+            ),
             time_sig_numerator,
             time_sig_denominator,
-            playback_stopper: app_ctx.application.master_playback_handler.playback_stopper.clone(),
+            playback_stopper: app_ctx
+                .application
+                .master_playback_handler
+                .playback_stopper
+                .clone(),
         });
 
         app_ctx

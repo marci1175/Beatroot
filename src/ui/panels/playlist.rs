@@ -25,7 +25,10 @@ use crate::{
         },
     },
 };
-use egui::{Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2, vec2};
+use egui::{
+    Align2, Color32, FontId, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2,
+    vec2,
+};
 use egui_toast::{Toast, ToastStyle};
 use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
@@ -158,7 +161,7 @@ impl Default for PlaylistState {
             playback_state: Default::default(),
             playlist_preferences: PlaylistPreferences::default(),
             time_signature_numerator: Arc::new(Mutex::new(4)),
-            time_signature_denominator: Arc::new(Mutex::new(4))
+            time_signature_denominator: Arc::new(Mutex::new(4)),
         }
     }
 }
@@ -840,6 +843,35 @@ fn render_samples(
                         });
                     });
                 });
+
+            // Allocate ui next to the name of the sample for quick access to the samples settings
+            ui.scope_builder(
+                egui::UiBuilder::new().max_rect(Rect {
+                    min: Pos2::new(
+                        sample_rect.left_top().x + galley.size().x + 20.,
+                        sample_rect.left_top().y,
+                    ),
+                    max: Pos2::new(
+                        sample_rect.right(),
+                        sample_rect.left_top().y + galley.size().y,
+                    ),
+                }),
+                |ui| {
+                    ScrollArea::horizontal()
+                        .auto_shrink([false, false])
+                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.button("Hello");
+                                ui.button("Hello");
+                                ui.button("Hello");
+                                ui.button("Hello");
+                                ui.button("Hello2");
+                                ui.button("Hello3");
+                            });
+                        });
+                },
+            );
         }
     }
 }

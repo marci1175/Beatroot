@@ -4,6 +4,7 @@ use egui::{Align2, Color32, InnerResponse, Panel, RichText, ScrollArea, Sense, U
 use strum::{Display, VariantArray};
 
 use crate::{
+    VALID_TIME_SIG_DENOMINATORS,
     app::Application,
     audio::host::{HOST_STATE, HostInformation},
     ui::windows::SettingsState,
@@ -23,7 +24,7 @@ use crate::{
 pub enum SettingsType {
     #[default]
     General,
-    ProjectGeneral,
+    Project,
     Plugins,
     Playlist,
     Mixer,
@@ -122,7 +123,7 @@ pub fn display_settings_window(
                             }
                             SettingsType::Mixer => {}
                             SettingsType::Performance => {}
-                            SettingsType::ProjectGeneral => {
+                            SettingsType::Project => {
                                 ui.label(RichText::from("Audio Settings").strong());
 
                                 ui.horizontal(|ui| {
@@ -184,6 +185,41 @@ pub fn display_settings_window(
                                         )));
                                     }
                                 });
+
+                                ui.label(RichText::from("Timing"));
+
+                                let time_sig_numerator = global_state
+                                    .panel_states
+                                    .playlist_panel
+                                    .read()
+                                    .time_signature_numerator
+                                    .clone();
+                                let time_signature_denominator = global_state
+                                    .panel_states
+                                    .playlist_panel
+                                    .read()
+                                    .time_signature_denominator
+                                    .clone();
+
+                                ui.add(
+                                    egui::Slider::new(&mut *time_sig_numerator.lock(), 1..=99)
+                                        .prefix("Time Signature Numerator"),
+                                );
+
+                                let time_signature_denominator =
+                                    &mut *time_signature_denominator.lock();
+
+                                egui::ComboBox::from_label("Time Signature Denominator")
+                                    .selected_text(time_signature_denominator.to_string())
+                                    .show_ui(ui, |ui| {
+                                        for valid_denom in VALID_TIME_SIG_DENOMINATORS {
+                                            ui.selectable_value(
+                                                time_signature_denominator,
+                                                *time_signature_denominator,
+                                                valid_denom.to_string(),
+                                            );
+                                        }
+                                    });
                             }
                         },
                     );

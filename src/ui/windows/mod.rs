@@ -28,6 +28,13 @@ macro_rules! create_window_states {
                             $draw_window(ui, global_state, &mut self.[<$window_name:lower _state>]);
                         }
                     )*
+
+                    // If an escape input is captured, set all the windows' "openness" to false.
+                    if ui.input(|r| r.key_pressed(egui::Key::Escape)) {
+                        $(
+                            self.[<$window_name:lower>] = false;
+                        )*
+                    }
                 }
             }
 
