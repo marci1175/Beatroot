@@ -369,6 +369,13 @@ impl MasterPlaybackThread {
                 // Listen for an incoming sample packet
                 match receiver.recv() {
                     Ok(samples) => {
+                        if dbg!(samples.len()) == 0 {
+                            playback_stopper_clone.stop();
+                            should_ingest_clone.stop();
+
+                            continue;
+                        }
+
                         // Lock the ingest thread until we have processed most of the samples, we should unlock the stopper after applying effects so that we have plenty time.
                         // This is redundant since ingest locks itself after passing the stopper
                         should_ingest_clone.stop();

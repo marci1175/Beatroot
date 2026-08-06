@@ -1,9 +1,5 @@
 use std::{
-    collections::HashMap,
-    hash::{Hash, Hasher},
-    ops::Add,
-    path::PathBuf,
-    sync::Arc,
+    collections::HashMap, fmt::Debug, hash::{Hash, Hasher}, ops::Add, path::PathBuf, sync::Arc, time::Duration,
 };
 
 // static GLOBAL_SAMPLE_ID: GlobalID = GlobalID::new(0);
@@ -25,9 +21,10 @@ use crate::{
         },
     },
 };
+use chrono::NaiveTime;
 use egui::{
-    Align2, Color32, FontId, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2,
-    vec2,
+    Align2, Color32, FontId, Id, Layout, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, Ui,
+    UiBuilder, Vec2, Widget, vec2,
 };
 use egui_toast::{Toast, ToastStyle};
 use indexmap::IndexMap;
@@ -615,6 +612,12 @@ fn render_samples(
                 }
             }
 
+            // Effects map of all the samples present in the playlist. (If they have one)
+            let fx_map = global_state.fx_map.clone();
+
+            // The unique id number to the sample
+            let sample_id = sample.id;
+
             // Create a context menu for the node
             egui::Popup::menu(&sample_response)
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -623,19 +626,12 @@ fn render_samples(
                     ui.label(RichText::from(&sample.name).weak());
                     ui.separator();
 
-                    // Effects map of all the samples present in the playlist. (If they have one)
-                    let fx_map = global_state.fx_map.clone();
-
-                    // The unique id number to the sample
-                    let sample_id = sample.id;
-
                     let is_fx_enabled = fx_map.contains_key(&sample_id);
-                    let fx_toggle = ui.toggle_value(
+
+                    // Display this portion of the ui
+                    let fx_toggle = ui.checkbox(
                         &mut is_fx_enabled.clone(),
-                        match is_fx_enabled {
-                            true => "Disable",
-                            false => "Enable",
-                        },
+                        RichText::from("Effects").strong(),
                     );
 
                     if fx_toggle.clicked() {
@@ -649,7 +645,7 @@ fn render_samples(
                     // This menubutton is deactivated until an effect map is created manually
                     ui.add_enabled_ui(fx_map.contains_key(&sample_id), |ui| {
                         // Create a menu button which displays the effects
-                        ui.menu_button("Effects", |ui| {
+                        ui.menu_button("Effects Chain", |ui| {
                             // Create desired size of the window
                             let desired_size = vec2(
                                 ui.viewport_rect().width() / 3.,
@@ -842,34 +838,69 @@ fn render_samples(
                             });
                         });
                     });
+                
+                    // Draw a separator so that it looks more visually pleasing
+                    ui.separator();
+
+                    ui.menu_button("Properties", |ui| {
+                        ui.horizontal(|ui| {
+                           ui.label("Sample Rate"); 
+                           ui.label(format!("{}hz", sample.properties.sample_rate)); 
+                        });
+                        ui.horizontal(|ui| {
+                           ui.label("Length"); 
+                           ui.label(NaiveTime::from_num_seconds_from_midnight_opt((sample.properties.length as f64 / 1000.0 % 86400.0) as u32, 0).unwrap_or_default().format("%H:%M:%S").to_string()); 
+                        });
+                        ui.horizontal(|ui| {
+                           ui.label("Path"); 
+                           ui.label(sample.path.display().to_string()); 
+                        });
+
+                        // Provide a bit more information id debug builds
+                        #[cfg(debug_assertions)]
+                        {
+                            ui.separator();
+                            ui.horizontal(|ui| {
+                                ui.label("ID"); 
+                                ui.label(sample.id.to_string()); 
+                            });
+                        }
+                    });
                 });
 
             // Allocate ui next to the name of the sample for quick access to the samples settings
             ui.scope_builder(
-                egui::UiBuilder::new().max_rect(Rect {
-                    min: Pos2::new(
-                        sample_rect.left_top().x + galley.size().x + 20.,
-                        sample_rect.left_top().y,
-                    ),
-                    max: Pos2::new(
-                        sample_rect.right(),
-                        sample_rect.left_top().y + galley.size().y,
-                    ),
-                }),
+                egui::UiBuilder::new()
+                    .id(Id::new(sample.id).with(pos))
+                    .max_rect(Rect {
+                        min: Pos2::new(
+                            sample_rect.left_top().x + galley.size().x + 20.,
+                            sample_rect.left_top().y,
+                        ),
+                        max: Pos2::new(
+                            sample_rect.right(),
+                            sample_rect.left_top().y + galley.size().y,
+                        ),
+                    }),
                 |ui| {
-                    ScrollArea::horizontal()
-                        .auto_shrink([false, false])
-                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.button("Hello");
-                                ui.button("Hello");
-                                ui.button("Hello");
-                                ui.button("Hello");
-                                ui.button("Hello2");
-                                ui.button("Hello3");
+                    let sample_has_fx = fx_map.contains_key(&sample_id);
+
+                    ui.with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
+                        // Create an image that indicates whether effects are enabled for this specific sample
+                        egui::Image::new(egui::include_image!("..\\..\\..\\assets\\fxw.svg"))
+                            .tint(if sample_has_fx {
+                                Color32::LIGHT_BLUE
+                            } else {
+                                Color32::WHITE
+                            })
+                            .max_size(Vec2::new(galley.size().y, galley.size().y))
+                            .ui(ui)
+                            .on_hover_text(if sample_has_fx {
+                                "This sample has effects enabled."
+                            } else {
+                                "This sample does not have any effects applied."
                             });
-                        });
+                    });
                 },
             );
         }

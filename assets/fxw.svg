@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg">
+ <title/>
+
+ <g class="layer">
+  <title>Layer 1</title>
+  <g data-name="Layer 2" id="Layer_2">
+   <path d="m18,11a1,1 0 0 1 -1,1a5,5 0 0 0 -5,5a1,1 0 0 1 -2,0a5,5 0 0 0 -5,-5a1,1 0 0 1 0,-2a5,5 0 0 0 5,-5a1,1 0 0 1 2,0a5,5 0 0 0 5,5a1,1 0 0 1 1,1z" id="svg_1" fill="#ffffff"/>
+   <path d="m19,24a1,1 0 0 1 -1,1a2,2 0 0 0 -2,2a1,1 0 0 1 -2,0a2,2 0 0 0 -2,-2a1,1 0 0 1 0,-2a2,2 0 0 0 2,-2a1,1 0 0 1 2,0a2,2 0 0 0 2,2a1,1 0 0 1 1,1z" id="svg_2" fill="#ffffff"/>
+   <path d="m28,17a1,1 0 0 1 -1,1a4,4 0 0 0 -4,4a1,1 0 0 1 -2,0a4,4 0 0 0 -4,-4a1,1 0 0 1 0,-2a4,4 0 0 0 4,-4a1,1 0 0 1 2,0a4,4 0 0 0 4,4a1,1 0 0 1 1,1z" id="svg_3" fill="#ffffff"/>
+  </g>
+ </g>
+</svg>

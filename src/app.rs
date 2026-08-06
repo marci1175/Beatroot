@@ -264,6 +264,9 @@ impl App for AppRoot {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Install image loaders so that images can be displayed later
+        egui_extras::install_image_loaders(ui.ctx());
+
         // Create the main options bar
         egui::Panel::top("application_options").show(ui, |ui| {
             ui.horizontal(|ui| {

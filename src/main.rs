@@ -7,8 +7,14 @@ use windows::{
     core::w,
 };
 
+// #[cfg(feature = "dhat-heap")]
+// #[global_allocator]
+// static ALLOC: dhat::Alloc = dhat::Alloc;
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    // let _profiler = dhat::Profiler::new_heap();
+
     // Get original panic handler
     let original_hook = panic::take_hook();
 
