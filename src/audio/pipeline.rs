@@ -72,9 +72,10 @@ fn add_resamplers(
     for sample in original_samples {
         // Get sample rate of sample
         let sample_rate = sample.sample_rate();
+        let origin_id = sample.origin_id() as u32;
 
-        // Only create a new resampler if it doesnt exist yet for our sample rate
-        if !resamplers.contains_key(&sample_rate) {
+        // A resampler is created per origin to take interpolation between chunks of the same sample into consideration.
+        if !resamplers.contains_key(&origin_id) {
             let resampler = Async::<f32>::new_sinc(
                 host_info.sample_rate as f64 / sample_rate as f64,
                 2.0,
@@ -84,7 +85,7 @@ fn add_resamplers(
                 rubato::FixedAsync::Input,
             )?;
 
-            resamplers.insert(sample_rate, Mutex::new(resampler));
+            resamplers.insert(origin_id, Mutex::new(resampler));
         }
     }
 
@@ -102,7 +103,7 @@ fn resample(
         original_samples.into_par_iter().map(move |sample| {
             // Resample if needed
             if sample.sample_rate() != host_info.sample_rate {
-                let resampler_guard = resamplers.get_mut(&sample.sample_rate()).unwrap();
+                let resampler_guard = resamplers.get_mut(&(sample.origin_id() as u32)).unwrap();
                 let mut resampler = resampler_guard.lock();
 
                 let channels = sample.channels() as usize;

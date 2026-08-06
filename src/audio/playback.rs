@@ -371,7 +371,6 @@ impl MasterPlaybackThread {
                     Ok(samples) => {
                         if dbg!(samples.len()) == 0 {
                             playback_stopper_clone.stop();
-                            should_ingest_clone.stop();
 
                             continue;
                         }
