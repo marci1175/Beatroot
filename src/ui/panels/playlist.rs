@@ -1,5 +1,11 @@
 use std::{
-    collections::HashMap, fmt::Debug, hash::{Hash, Hasher}, ops::Add, path::PathBuf, sync::Arc, time::Duration,
+    collections::HashMap,
+    fmt::Debug,
+    hash::{Hash, Hasher},
+    ops::Add,
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
 };
 
 // static GLOBAL_SAMPLE_ID: GlobalID = GlobalID::new(0);
@@ -838,22 +844,30 @@ fn render_samples(
                             });
                         });
                     });
-                
+
                     // Draw a separator so that it looks more visually pleasing
                     ui.separator();
 
                     ui.menu_button("Properties", |ui| {
                         ui.horizontal(|ui| {
-                           ui.label("Sample Rate"); 
-                           ui.label(format!("{}hz", sample.properties.sample_rate)); 
+                            ui.label("Sample Rate");
+                            ui.label(format!("{}hz", sample.properties.sample_rate));
                         });
                         ui.horizontal(|ui| {
-                           ui.label("Length"); 
-                           ui.label(NaiveTime::from_num_seconds_from_midnight_opt((sample.properties.length as f64 / 1000.0 % 86400.0) as u32, 0).unwrap_or_default().format("%H:%M:%S").to_string()); 
+                            ui.label("Length");
+                            ui.label(
+                                NaiveTime::from_num_seconds_from_midnight_opt(
+                                    (sample.properties.length as f64 / 1000.0 % 86400.0) as u32,
+                                    0,
+                                )
+                                .unwrap_or_default()
+                                .format("%H:%M:%S")
+                                .to_string(),
+                            );
                         });
                         ui.horizontal(|ui| {
-                           ui.label("Path"); 
-                           ui.label(sample.path.display().to_string()); 
+                            ui.label("Path");
+                            ui.label(sample.path.display().to_string());
                         });
 
                         // Provide a bit more information id debug builds
@@ -861,8 +875,8 @@ fn render_samples(
                         {
                             ui.separator();
                             ui.horizontal(|ui| {
-                                ui.label("ID"); 
-                                ui.label(sample.id.to_string()); 
+                                ui.label("ID");
+                                ui.label(sample.id.to_string());
                             });
                         }
                     });

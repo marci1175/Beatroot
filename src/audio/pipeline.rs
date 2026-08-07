@@ -236,8 +236,10 @@ fn apply_effects(
                                         // Create a list of pointers for both, this will get passed into the plugin
                                         let input_ptrs: Vec<*const f32> =
                                             inputs.iter_mut().map(|c| c.as_ptr()).collect();
-                                        let mut output_ptrs: Vec<*mut f32> =
-                                            outputs.iter_mut().map(|c| c.as_mut_ptr()).collect();
+                                        let mut output_ptrs: Vec<*mut f32> = outputs
+                                            .iter_mut()
+                                            .map(|c| unsafe { c.as_mut_ptr().add(chunk_idx) })
+                                            .collect();
 
                                         // Apply effects
                                         (aeffect.processReplacing)(

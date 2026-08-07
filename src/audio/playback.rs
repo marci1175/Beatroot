@@ -5,6 +5,8 @@
 pub const PLAYBACK_BUFFER_LEN_MS: usize = 50;
 
 use std::{
+    alloc::Layout,
+    collections::VecDeque,
     num::{NonZero, NonZeroU32},
     ops::Range,
     sync::{Arc, atomic::AtomicU64},
@@ -362,6 +364,16 @@ impl MasterPlaybackThread {
             // just avoid allocating on every single iteration after a few iterations.
             let (buf_return_tx, buf_return_rx) = flume::bounded::<Vec<f32>>(4);
 
+            let mut tracked_signal = None;
+
+            // Used to track how many buffers are currently in the overhead state.
+            let mut current_buffer_overhead = 0;
+
+            // The target count of buffers for playback overhead
+            // The amount sets the count of the buffers that are pre-produced during playback.
+            // Please note that a bigger buffer results in larger latency when modify the sounds real time.
+            let target_buffer_overhead = 16;
+
             loop {
                 // Check if the main playback thread should stop (user input)
                 playback_stopper_clone.should_wait();
@@ -369,12 +381,6 @@ impl MasterPlaybackThread {
                 // Listen for an incoming sample packet
                 match receiver.recv() {
                     Ok(samples) => {
-                        if dbg!(samples.len()) == 0 {
-                            playback_stopper_clone.stop();
-
-                            continue;
-                        }
-
                         // Lock the ingest thread until we have processed most of the samples, we should unlock the stopper after applying effects so that we have plenty time.
                         // This is redundant since ingest locks itself after passing the stopper
                         should_ingest_clone.stop();
@@ -434,8 +440,34 @@ impl MasterPlaybackThread {
                             sample_tracker_clone.clone(),
                         );
 
-                        // Append finished work to queue
-                        queue_in.append(tracked_sample);
+                        // With this custom appending logic we limit the total amount of buffers appended to the queue saving a large amount of memory.
+                        // Buffers are appended to a queue and one of the buffers (preferrably the middle one) is tracked.
+                        // This means that if the middle of the buffer is reached, more samples are appended to the queue while the tracked sample is updated.
+                        if target_buffer_overhead / 2 == current_buffer_overhead {
+                            // Create the tracked signal which we will wait for if we have allocated the desired amount of buffer overhead
+                            tracked_signal = Some(queue_in.append_with_signal(tracked_sample));
+
+                            // Increment overhead count
+                            current_buffer_overhead += 1;
+                        } else {
+                            // Check if we have allocated enough buffers
+                            if current_buffer_overhead != target_buffer_overhead {
+                                // If not just increment the index and append the source to the queue
+                                current_buffer_overhead += 1;
+                            } else {
+                                // If we have then wait for the signal that is produced when we consume the buffer in the middle of the queue.
+                                if let Some(signal) = tracked_signal.take() {
+                                    let _ = signal.recv();
+
+                                    // Reset the tracked variables
+                                    current_buffer_overhead = target_buffer_overhead / 2;
+                                    tracked_signal = None;
+                                }
+                            }
+
+                            // Append to the queue
+                            queue_in.append(tracked_sample);
+                        }
                     }
                     Err(error) => {
                         // Print the error but we shouldnt stop execution

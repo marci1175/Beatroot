@@ -597,6 +597,40 @@ impl PluginManager {
                         // Fetch some information about the plugin
                         let name = unsafe { get_plugin_name(plugin_callback) };
                         let vendor = unsafe { get_vendor_name(plugin_callback) };
+                        let dispatcher = unsafe { (*plugin_callback).dispatcher };
+
+                        (dispatcher)(
+                            plugin_callback,
+                            AEffectOpcode::Open as i32,
+                            0,
+                            0,
+                            std::ptr::null_mut(),
+                            0.0,
+                        );
+                        (dispatcher)(
+                            plugin_callback,
+                            AEffectOpcode::SetBlockSize as i32,
+                            0,
+                            crate::audio::pipeline::RESAMPLER_CHUNK_SIZE as isize,
+                            std::ptr::null_mut(),
+                            0.0,
+                        );
+                        (dispatcher)(
+                            plugin_callback,
+                            AEffectOpcode::MainsChanged as i32,
+                            0,
+                            1,
+                            std::ptr::null_mut(),
+                            0.0,
+                        );
+                        (dispatcher)(
+                            plugin_callback,
+                            AEffectOpcode::StartProcess as i32,
+                            0,
+                            0,
+                            std::ptr::null_mut(),
+                            0.0,
+                        );
 
                         // Store plugin
                         self.loaded_plugins.insert(
