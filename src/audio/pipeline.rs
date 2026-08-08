@@ -213,7 +213,7 @@ fn apply_effects(
                                             (sample.frames() - chunk_idx).min(RESAMPLER_CHUNK_SIZE);
 
                                         // Allocate the buffers for both the input and output
-                                        let mut inputs: Vec<Vec<f32>> = planar
+                                        let mut inputs: Vec<Vec<f32>> = outputs
                                             .iter()
                                             .map(|channel| {
                                                 channel[chunk_idx..chunk_idx + current_chunk_size]
@@ -236,6 +236,7 @@ fn apply_effects(
                                         // Create a list of pointers for both, this will get passed into the plugin
                                         let input_ptrs: Vec<*const f32> =
                                             inputs.iter_mut().map(|c| c.as_ptr()).collect();
+
                                         let mut output_ptrs: Vec<*mut f32> = outputs
                                             .iter_mut()
                                             .map(|c| unsafe { c.as_mut_ptr().add(chunk_idx) })
