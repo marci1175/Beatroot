@@ -143,22 +143,58 @@ pub fn create_ingest_thread(
                             if let Ok(file) = File::open(&sample.path)
                                 && let Ok(source) = Decoder::try_from(file)
                             {
-                                let sample_rate = source.sample_rate();
-                                let channels = source.channels();
+                                let native_rate: u32 = source.sample_rate().into();
+                                let native_channels: u16 = source.channels().into();
 
-                                // Collect raw samples
                                 let samples: Vec<f32> = source.collect();
-
-                                // Create cached sample
                                 let cached_sample = SampleBuffer::new(
                                     samples,
                                     sample.id,
-                                    sample_rate.into(),
-                                    channels.into(),
+                                    native_rate,
+                                    native_channels,
                                 );
 
-                                // Store in cache
-                                e.insert(cached_sample);
+                                let host_rate = host_info.sample_rate;
+                                let host_channels = host_info.channel_count as usize;
+
+                                // Duration (in host-rate units) from "now" to the end of this chunk window
+                                let until_sample_host = chunk_end_absolute - sample_pos_absolute;
+
+                                // Convert those durations into the file's own native rate/channels before indexing it
+                                let native_chunk_size = convert_domain(
+                                    chunk_size,
+                                    host_rate,
+                                    host_channels,
+                                    native_rate,
+                                    native_channels as usize,
+                                );
+                                let native_until_sample = convert_domain(
+                                    until_sample_host,
+                                    host_rate,
+                                    host_channels,
+                                    native_rate,
+                                    native_channels as usize,
+                                )
+                                .min(cached_sample.sample_count());
+                                let native_offset_in_chunk =
+                                    native_chunk_size.saturating_sub(native_until_sample);
+
+                                let mut padded = vec![0.0f32; native_chunk_size];
+                                let real = cached_sample.clone_sample_range(0..native_until_sample);
+                                let copy_len = real
+                                    .samples()
+                                    .len()
+                                    .min(padded.len().saturating_sub(native_offset_in_chunk));
+                                padded[native_offset_in_chunk..native_offset_in_chunk + copy_len]
+                                    .copy_from_slice(&real.samples()[..copy_len]);
+
+                                ingested_samples.push(SampleBuffer::new(
+                                    padded,
+                                    sample.id,
+                                    native_rate,
+                                    native_channels,
+                                ));
+                                cache.insert(sample.id, cached_sample);
                             }
                         }
 
@@ -167,22 +203,51 @@ pub fn create_ingest_thread(
                         // The sample should be cached by this time if valid
                         // If the sample still isnt present in the cache we can ignore that since it probably encountered some sort of an error or was deleted
                         if let Some(cached) = cache.get(&sample.id) {
-                            let sample_end_pos_absolute =
-                                cached.sample_count() + sample_pos_absolute;
+                            let host_rate = host_info.sample_rate;
+                            let host_channels = host_info.channel_count as usize;
+                            let native_rate = cached.sample_rate();
+                            let native_channels = cached.channels() as usize;
+
+                            // Cached length expressed in host-domain units, so comparisons below are consistent
+                            let cached_len_host = convert_domain(
+                                cached.sample_count(),
+                                native_rate,
+                                native_channels,
+                                host_rate,
+                                host_channels,
+                            );
+                            let sample_end_pos_absolute = cached_len_host + sample_pos_absolute;
 
                             if !(sample_end_pos_absolute < chunk_start_absolute) {
-                                // Convert absolute playlist positions into indices local to this buffer
-                                let local_start =
+                                let local_start_host =
                                     chunk_start_absolute.saturating_sub(sample_pos_absolute);
+                                let local_start_native = convert_domain(
+                                    local_start_host,
+                                    host_rate,
+                                    host_channels,
+                                    native_rate,
+                                    native_channels,
+                                );
 
                                 if sample_end_pos_absolute > chunk_end_absolute {
-                                    let local_end = chunk_end_absolute - sample_pos_absolute;
-                                    let ingest = cached.clone_sample_range(local_start..local_end);
+                                    let local_end_host = chunk_end_absolute - sample_pos_absolute;
+                                    let local_end_native = convert_domain(
+                                        local_end_host,
+                                        host_rate,
+                                        host_channels,
+                                        native_rate,
+                                        native_channels,
+                                    )
+                                    .min(cached.sample_count());
+                                    let ingest = cached.clone_sample_range(
+                                        local_start_native.min(local_end_native)..local_end_native,
+                                    );
                                     ingested_samples.push(ingest);
                                 } else {
-                                    // sample ends inside (or right at) this chunk — take it to the end of the buffer
-                                    let local_end = cached.sample_count();
-                                    let ingest = cached.clone_sample_range(local_start..local_end);
+                                    let local_end_native = cached.sample_count();
+                                    let ingest = cached.clone_sample_range(
+                                        local_start_native.min(local_end_native)..local_end_native,
+                                    );
                                     ingested_samples.push(ingest);
                                     should_be_removed = true;
                                 }
@@ -225,4 +290,20 @@ pub fn calculate_sample_pos(bpm: f64, beat: usize, sample_rate: usize, channels:
 
 pub fn calculate_beat_pos(bpm: f64, sample_pos: usize, sample_rate: usize, channels: usize) -> f64 {
     sample_pos as f64 / samples_per_beat(bpm, sample_rate, channels)
+}
+
+/// Converts a sample count expressed in one (rate, channel-count) domain into the
+/// equivalent sample count in another domain. `value` and the result are both
+/// "interleaved" counts (frame_count * channels), matching how SampleBuffer stores data.
+fn convert_domain(
+    value: usize,
+    from_rate: u32,
+    from_channels: usize,
+    to_rate: u32,
+    to_channels: usize,
+) -> usize {
+    let frames = value / from_channels.max(1);
+    let converted_frames =
+        ((frames as f64) * (to_rate as f64) / (from_rate as f64)).round() as usize;
+    converted_frames * to_channels
 }

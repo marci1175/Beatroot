@@ -1,6 +1,9 @@
 use std::{
     path::PathBuf,
-    sync::{Arc, atomic::AtomicI32},
+    sync::{
+        Arc,
+        atomic::{AtomicI32, AtomicU8},
+    },
 };
 
 use dashmap::DashMap;
@@ -72,6 +75,7 @@ pub struct Application {
     /// Audio handler for the playlist. This is where most of the computing power is. This handles effects, mixing, etc. to produce the final result when playing back audio.
     #[serde(skip)]
     pub master_playback_handler: Arc<MasterPlaybackThread>,
+    pub buffer_overhead: Arc<AtomicU8>,
 
     /// Contains each sample's effects that should be applied to them.
     /// They key is the original identifier for that specific node in the playlist.
@@ -118,10 +122,13 @@ impl Default for Application {
         // Update HostState with the host's default playback parameters
         HOST_STATE.store(Arc::new(HostInformation::new(sample_rate, channel_count)));
 
+        let buffer_overhead = Arc::new(AtomicU8::new(16));
+
         // Create master playback handler
         // This runs the more complicated playbacks and handles the playlist's playback.
         let master_playback_handler = MasterPlaybackThread::new(
             host_audio.sink.mixer().clone(),
+            buffer_overhead.clone(),
             fx_map.clone(),
             plugin_manager.clone(),
         )
@@ -154,6 +161,7 @@ impl Default for Application {
             sample_audio_handler: Arc::new(playback_thread_handler),
 
             master_playback_handler: Arc::new(master_playback_handler),
+            buffer_overhead,
 
             toasts: Arc::new(Mutex::new(Toasts::new())),
 

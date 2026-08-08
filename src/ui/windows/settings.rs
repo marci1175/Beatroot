@@ -130,7 +130,7 @@ pub fn display_settings_window(
                                 ui.horizontal(|ui| {
                                     ui.label("Buffer Overhead Count");
 
-                                    global_state.master_playback_handler.buffer_overhead.update(
+                                    global_state.buffer_overhead.update(
                                         std::sync::atomic::Ordering::Relaxed,
                                         std::sync::atomic::Ordering::Relaxed,
                                         |mut val| {
@@ -140,7 +140,7 @@ pub fn display_settings_window(
                                         },
                                     );
 
-                                    ui.label(format!("Current Overhead Buffer length: {}ms", global_state.master_playback_handler.buffer_overhead.load(std::sync::atomic::Ordering::Relaxed) as usize * PLAYBACK_BUFFER_LEN_MS / 2))
+                                    ui.label(format!("Current Overhead Buffer length: {}ms", global_state.buffer_overhead.load(std::sync::atomic::Ordering::Relaxed) as usize * PLAYBACK_BUFFER_LEN_MS / 2))
                                 });
                                 ui.label(RichText::from("A lower value means less memory used and lower latency but more theoritical CPU usage throughout playback. A higher value means a higher initial CPU usage with higher latency, but lower baseline CPU usage during playback.").weak());
                             

@@ -272,8 +272,6 @@ pub struct MasterPlaybackThread {
 
     pub playback_stopper: Stopper,
 
-    pub buffer_overhead: Arc<AtomicU8>,
-
     /// Mixer handle of the host. This is used to append samples to the host's output.
     host_mixer: Mixer,
 
@@ -285,6 +283,8 @@ pub struct MasterPlaybackThread {
 impl MasterPlaybackThread {
     pub fn new(
         host_mixer: Mixer,
+
+        target_buffer_overhead: Arc<AtomicU8>,
 
         // Reference to the Effects map in the application.
         fx_map: FXMap,
@@ -326,7 +326,6 @@ impl MasterPlaybackThread {
         // Sets the count of the buffers created to be the overhead of the player.
         // At the initial startup of the player 16 buffers are allocated. However, a tracked sample is inserted in the middle of the desired overhead buffers.
         // After that only `target_buffer_overhead` / 2 are created as overhead.
-        let target_buffer_overhead = Arc::new(AtomicU8::new(16));
         let target_buffer_overhead_clone = target_buffer_overhead.clone();
 
         // Create a thread for handling incoming samples
@@ -514,7 +513,6 @@ impl MasterPlaybackThread {
                 sample_ingest_tracker,
                 should_ingest,
             },
-            buffer_overhead: target_buffer_overhead,
             host_mixer,
             playback_stopper,
             sample_playback_tracker: sample_tracker,

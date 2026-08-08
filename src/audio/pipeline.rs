@@ -25,8 +25,6 @@ use crate::{
 
 pub const RESAMPLER_CHUNK_SIZE: usize = 1024;
 
-// pub struct Resampler
-
 /// Processes samples - this means that this function ensures that all samples match the host's sample rate and desired output.
 pub fn process_samples(
     workers: &ThreadPool,
