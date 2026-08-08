@@ -5,11 +5,12 @@
 pub const PLAYBACK_BUFFER_LEN_MS: usize = 50;
 
 use std::{
-    alloc::Layout,
-    collections::VecDeque,
     num::{NonZero, NonZeroU32},
     ops::Range,
-    sync::{Arc, atomic::AtomicU64},
+    sync::{
+        Arc,
+        atomic::{AtomicU8, AtomicU64},
+    },
     time::Duration,
 };
 
@@ -27,7 +28,7 @@ use crate::{
     audio::{
         host::{HOST_STATE, HostInformation, Tracked},
         ingest::SampleIngestManager,
-        pipeline::{mix_samples, process_samples},
+        pipeline::{ResamplerState, mix_samples, process_samples},
     },
     internals::utils::Stopper,
     plugins::PluginManager,
@@ -271,6 +272,8 @@ pub struct MasterPlaybackThread {
 
     pub playback_stopper: Stopper,
 
+    pub buffer_overhead: Arc<AtomicU8>,
+
     /// Mixer handle of the host. This is used to append samples to the host's output.
     host_mixer: Mixer,
 
@@ -318,8 +321,13 @@ impl MasterPlaybackThread {
 
         // Controls the main playback thread and blocks the playback thread if signaled, paused by default
         let playback_stopper = Stopper::new(true);
-
         let playback_stopper_clone = playback_stopper.clone();
+
+        // Sets the count of the buffers created to be the overhead of the player.
+        // At the initial startup of the player 16 buffers are allocated. However, a tracked sample is inserted in the middle of the desired overhead buffers.
+        // After that only `target_buffer_overhead` / 2 are created as overhead.
+        let target_buffer_overhead = Arc::new(AtomicU8::new(16));
+        let target_buffer_overhead_clone = target_buffer_overhead.clone();
 
         // Create a thread for handling incoming samples
         std::thread::spawn(move || {
@@ -358,23 +366,46 @@ impl MasterPlaybackThread {
             drop(info);
 
             // Resample input - all inputs could vary in length, however the output length doesnt really matter (input is going to be fixed cuz its easier to implement).
-            let resamplers: Arc<DashMap<u32, Mutex<Async<f32>>>> = Arc::new(DashMap::new());
+            let resamplers: Arc<DashMap<u32, Mutex<ResamplerState>>> = Arc::new(DashMap::new());
 
             // A handful of spare buffers is enough — this isn't meant to hold everything,
             // just avoid allocating on every single iteration after a few iterations.
             let (buf_return_tx, buf_return_rx) = flume::bounded::<Vec<f32>>(4);
 
+            // The tracked signal is produced by a tracked smaple which gets completed when the tracked sample is consumed. This limits the amount of buffers created thus saving memory.
             let mut tracked_signal = None;
 
             // Used to track how many buffers are currently in the overhead state.
+            // One buffer equals `PLAYBACK_BUFFER_LEN_MS` of sound.
             let mut current_buffer_overhead = 0;
 
-            // The target count of buffers for playback overhead
-            // The amount sets the count of the buffers that are pre-produced during playback.
-            // Please note that a bigger buffer results in larger latency when modify the sounds real time.
-            let target_buffer_overhead = 16;
+            // Create a snapshot of the target buffer overhead so that we know when it is modified by the user.
+            let mut last_target_buffer_overhead =
+                target_buffer_overhead_clone.load(std::sync::atomic::Ordering::Relaxed);
 
             loop {
+                // The target count of buffers for playback overhead
+                // The amount sets the count of the buffers that are pre-produced during playback.
+                // Please note that a bigger buffer results in larger latency when modify the sounds real time.
+                // This can be modified by the user to their preference, thats why we fetch it every iteration
+                let target_buffer_overhead =
+                    target_buffer_overhead_clone.load(std::sync::atomic::Ordering::Relaxed);
+
+                // Compare the two values so that we know when it is changed
+                if target_buffer_overhead != last_target_buffer_overhead {
+                    // Clear the queue to avoid double allocating memory or creating deouble buffers
+                    queue_in.clear();
+
+                    // Reset buffer overhead counter so that we will build up another buffer overhead (now with the updated size)
+                    current_buffer_overhead = 0;
+
+                    // Reset the tracked signal since we also resetted the queue
+                    tracked_signal = None;
+
+                    // Update the last known value of the traget buffer overhead.
+                    last_target_buffer_overhead = target_buffer_overhead;
+                }
+
                 // Check if the main playback thread should stop (user input)
                 playback_stopper_clone.should_wait();
 
@@ -443,7 +474,7 @@ impl MasterPlaybackThread {
                         // With this custom appending logic we limit the total amount of buffers appended to the queue saving a large amount of memory.
                         // Buffers are appended to a queue and one of the buffers (preferrably the middle one) is tracked.
                         // This means that if the middle of the buffer is reached, more samples are appended to the queue while the tracked sample is updated.
-                        if target_buffer_overhead / 2 == current_buffer_overhead {
+                        if (target_buffer_overhead / 2) - 1 == current_buffer_overhead {
                             // Create the tracked signal which we will wait for if we have allocated the desired amount of buffer overhead
                             tracked_signal = Some(queue_in.append_with_signal(tracked_sample));
 
@@ -460,7 +491,7 @@ impl MasterPlaybackThread {
                                     let _ = signal.recv();
 
                                     // Reset the tracked variables
-                                    current_buffer_overhead = target_buffer_overhead / 2;
+                                    current_buffer_overhead = (target_buffer_overhead / 2) - 1;
                                     tracked_signal = None;
                                 }
                             }
@@ -483,6 +514,7 @@ impl MasterPlaybackThread {
                 sample_ingest_tracker,
                 should_ingest,
             },
+            buffer_overhead: target_buffer_overhead,
             host_mixer,
             playback_stopper,
             sample_playback_tracker: sample_tracker,

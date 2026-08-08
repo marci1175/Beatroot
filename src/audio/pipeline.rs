@@ -34,7 +34,7 @@ pub fn process_samples(
     host_info: &HostInformation,
     resampler_params: &SincInterpolationParameters,
     processed_samples: &mut Vec<SampleBuffer>,
-    resamplers: Arc<DashMap<u32, Mutex<Async<f32>>>>,
+    resamplers: Arc<DashMap<u32, Mutex<ResamplerState>>>,
     effects_map: Arc<ArcSwapAny<Arc<DashMap<usize, NodeMap>>>>,
     _plugin_manager: Arc<RwLock<PluginManager>>,
 ) -> anyhow::Result<()> {
@@ -67,14 +67,12 @@ fn add_resamplers(
     original_samples: &Vec<SampleBuffer>,
     host_info: &HostInformation,
     resampler_params: &SincInterpolationParameters,
-    resamplers: &Arc<DashMap<u32, parking_lot::lock_api::Mutex<parking_lot::RawMutex, Async<f32>>>>,
+    resamplers: &Arc<DashMap<u32, Mutex<ResamplerState>>>,
 ) -> Result<(), anyhow::Error> {
     for sample in original_samples {
-        // Get sample rate of sample
         let sample_rate = sample.sample_rate();
         let origin_id = sample.origin_id() as u32;
 
-        // A resampler is created per origin to take interpolation between chunks of the same sample into consideration.
         if !resamplers.contains_key(&origin_id) {
             let resampler = Async::<f32>::new_sinc(
                 host_info.sample_rate as f64 / sample_rate as f64,
@@ -85,62 +83,104 @@ fn add_resamplers(
                 rubato::FixedAsync::Input,
             )?;
 
-            resamplers.insert(origin_id, Mutex::new(resampler));
+            resamplers.insert(
+                origin_id,
+                Mutex::new(ResamplerState {
+                    resampler,
+                    input_carry: Vec::new(),
+                    output_leftover: Vec::new(),
+                }),
+            );
         }
     }
-
     Ok(())
+}
+use crate::audio::playback::calculate_playback_chunk_size;
+
+pub struct ResamplerState {
+    resampler: Async<f32>,
+    /// Leftover input not yet enough to feed the resampler.
+    input_carry: Vec<f32>,
+    /// Resampled output not yet consumed into a chunk.
+    output_leftover: Vec<f32>,
 }
 
 fn resample(
     workers: &ThreadPool,
     original_samples: Vec<SampleBuffer>,
     host_info: &HostInformation,
-    resamplers: Arc<DashMap<u32, parking_lot::lock_api::Mutex<parking_lot::RawMutex, Async<f32>>>>,
+    resamplers: Arc<DashMap<u32, Mutex<ResamplerState>>>,
 ) -> Map<IntoIter<SampleBuffer>, impl Fn(SampleBuffer) -> SampleBuffer> {
-    // Run on worker threads specifically created for this.
     workers.install(|| {
         original_samples.into_par_iter().map(move |sample| {
-            // Resample if needed
             if sample.sample_rate() != host_info.sample_rate {
-                let resampler_guard = resamplers.get_mut(&(sample.origin_id() as u32)).unwrap();
-                let mut resampler = resampler_guard.lock();
+                let state_guard = resamplers.get_mut(&(sample.origin_id() as u32)).unwrap();
+                let mut state = state_guard.lock();
+                let ResamplerState {
+                    resampler,
+                    input_carry,
+                    output_leftover,
+                } = &mut *state;
 
                 let channels = sample.channels() as usize;
-                let input_len = sample.sample_count() / channels;
+                input_carry.extend_from_slice(sample.samples());
 
-                let output_length = resampler.process_all_needed_output_len(input_len);
-                let mut output_buffer = InterleavedOwned::new(0.0, channels, output_length);
+                // Feed the resampler exactly the fixed frame count it wants, as many times as we currently have input for.
+                loop {
+                    let needed_frames = resampler.input_frames_next();
+                    let needed_len = needed_frames * channels;
+                    if input_carry.len() < needed_len {
+                        break;
+                    }
 
-                let (_input_len, actual_output_len) = resampler
-                    .process_all_into_buffer(&sample, &mut output_buffer, input_len, None)
-                    .unwrap();
+                    let input_chunk: Vec<f32> = input_carry.drain(..needed_len).collect();
 
-                let mut raw_samples = output_buffer.take_data();
-                raw_samples.truncate(actual_output_len * channels);
+                    // Wrap in a SampleBuffer instead of InterleavedOwned — SampleBuffer already has
+                    // a working manual Adapter impl, so no ExactSizeBuf trait wrangling needed.
+                    let input_sample = SampleBuffer::new(
+                        input_chunk,
+                        sample.origin_id(),
+                        sample.sample_rate(),
+                        sample.channels(),
+                    );
 
-                // How many frames THIS chunk should produce at the target sample rate,
-                // given the resample ratio — independent of whatever the resampler
-                // actually returned.
-                let ratio = host_info.sample_rate as f64 / sample.sample_rate() as f64;
-                let expected_frames = (input_len as f64 * ratio).round() as usize;
-                let expected_len = expected_frames * channels;
+                    let out_frames = resampler.output_frames_next();
+                    let mut output_buffer = InterleavedOwned::new(0.0, channels, out_frames);
 
-                // Force output to exactly the expected length: pad with silence if
-                // short, truncate if long. This keeps every SampleBuffer aligned to
-                // the same chunk boundary regardless of resampler jitter.
-                match raw_samples.len().cmp(&expected_len) {
-                    std::cmp::Ordering::Less => raw_samples.resize(expected_len, 0.0),
-                    std::cmp::Ordering::Greater => raw_samples.truncate(expected_len),
-                    std::cmp::Ordering::Equal => {}
+                    let (_consumed, produced) = resampler
+                        .process_into_buffer(&input_sample, &mut output_buffer, None)
+                        .unwrap();
+
+                    let mut produced_samples = output_buffer.take_data();
+                    produced_samples.truncate(produced * channels);
+                    output_leftover.extend_from_slice(&produced_samples);
                 }
 
-                SampleBuffer::new(
-                    raw_samples,
-                    sample.origin_id(),
-                    sample.sample_rate(),
-                    sample.channels(),
-                )
+                let target_frames =
+                    calculate_playback_chunk_size(host_info) / host_info.channel_count as usize;
+                let target_len = target_frames * channels;
+
+                if output_leftover.len() >= target_len {
+                    let out: Vec<f32> = output_leftover.drain(..target_len).collect();
+                    SampleBuffer::new(
+                        out,
+                        sample.origin_id(),
+                        host_info.sample_rate,
+                        sample.channels(),
+                    )
+                } else {
+                    // Only the very first chunk or two, while the resampler's one-time
+                    // startup delay is still draining — steady state fills every time after.
+                    let mut out = output_leftover.clone();
+                    out.resize(target_len, 0.0);
+                    output_leftover.clear();
+                    SampleBuffer::new(
+                        out,
+                        sample.origin_id(),
+                        host_info.sample_rate,
+                        sample.channels(),
+                    )
+                }
             } else {
                 sample
             }

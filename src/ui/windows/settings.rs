@@ -6,7 +6,10 @@ use strum::{Display, VariantArray};
 use crate::{
     VALID_TIME_SIG_DENOMINATORS,
     app::Application,
-    audio::host::{HOST_STATE, HostInformation},
+    audio::{
+        host::{HOST_STATE, HostInformation},
+        playback::PLAYBACK_BUFFER_LEN_MS,
+    },
     ui::windows::SettingsState,
 };
 
@@ -122,7 +125,27 @@ pub fn display_settings_window(
                                 });
                             }
                             SettingsType::Mixer => {}
-                            SettingsType::Performance => {}
+                            SettingsType::Performance => {
+                                ui.label(RichText::from("Master Playback Settings").strong());
+                                ui.horizontal(|ui| {
+                                    ui.label("Buffer Overhead Count");
+
+                                    global_state.master_playback_handler.buffer_overhead.update(
+                                        std::sync::atomic::Ordering::Relaxed,
+                                        std::sync::atomic::Ordering::Relaxed,
+                                        |mut val| {
+                                            ui.add(egui::Slider::new(&mut val, 4..=128));
+
+                                            val
+                                        },
+                                    );
+
+                                    ui.label(format!("Current Overhead Buffer length: {}ms", global_state.master_playback_handler.buffer_overhead.load(std::sync::atomic::Ordering::Relaxed) as usize * PLAYBACK_BUFFER_LEN_MS / 2))
+                                });
+                                ui.label(RichText::from("A lower value means less memory used and lower latency but more theoritical CPU usage throughout playback. A higher value means a higher initial CPU usage with higher latency, but lower baseline CPU usage during playback.").weak());
+                            
+                                ui.separator();
+                            }
                             SettingsType::Project => {
                                 ui.label(RichText::from("Audio Settings").strong());
 
@@ -137,7 +160,7 @@ pub fn display_settings_window(
                                     let mut current_sample_rate = original_sample_rate;
 
                                     egui::ComboBox::from_label("Sampling Rate")
-                                        .selected_text(format!("{:?}", current_sample_rate))
+                                        .selected_text(format!("{}hz", current_sample_rate))
                                         .show_ui(ui, |ui| {
                                             ui.selectable_value(
                                                 &mut current_sample_rate,
@@ -201,10 +224,14 @@ pub fn display_settings_window(
                                     .time_signature_denominator
                                     .clone();
 
-                                ui.add(
-                                    egui::Slider::new(&mut *time_sig_numerator.lock(), 1..=99)
-                                        .prefix("Time Signature Numerator"),
-                                );
+                                ui.horizontal(|ui| {
+                                    ui.label("Time Signature Numerator");
+
+                                    ui.add(egui::Slider::new(
+                                        &mut *time_sig_numerator.lock(),
+                                        1..=99,
+                                    ));
+                                });
 
                                 let time_signature_denominator =
                                     &mut *time_signature_denominator.lock();

@@ -5,7 +5,6 @@ use std::{
     ops::Add,
     path::PathBuf,
     sync::Arc,
-    time::Duration,
 };
 
 // static GLOBAL_SAMPLE_ID: GlobalID = GlobalID::new(0);
@@ -29,8 +28,8 @@ use crate::{
 };
 use chrono::NaiveTime;
 use egui::{
-    Align2, Color32, FontId, Id, Layout, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, Ui,
-    UiBuilder, Vec2, Widget, vec2,
+    Align2, Color32, FontId, Id, Layout, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2, Widget,
+    vec2,
 };
 use egui_toast::{Toast, ToastStyle};
 use indexmap::IndexMap;
@@ -672,11 +671,15 @@ fn render_samples(
                                         ui.menu_button("Options", |ui| {
                                             ui.button("Fullscreen").clicked();
                                             if ui.button("Zoom In").clicked() {
-                                                fx_map.ui_attributes.scale += 0.2;
+                                                fx_map.ui_attributes.scale =
+                                                    (fx_map.ui_attributes.scale + 0.2)
+                                                        .clamp(0.3, 5.0);
                                             }
 
                                             if ui.button("Zoom Out").clicked() {
-                                                fx_map.ui_attributes.scale -= 0.2;
+                                                fx_map.ui_attributes.scale =
+                                                    (fx_map.ui_attributes.scale - 0.2)
+                                                        .clamp(0.3, 5.0);
                                             }
 
                                             ui.separator();

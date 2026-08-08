@@ -2,9 +2,9 @@ use std::{
     os::raw::c_char,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicI32, AtomicU64},
+        atomic::{AtomicI32, AtomicU64},
     },
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use num_enum::TryFromPrimitive;
@@ -14,10 +14,7 @@ use vst::api::AEffect;
 use crate::{
     audio::{host::HOST_STATE, ingest::calculate_beat_pos},
     internals::utils::Stopper,
-    plugins::api::vst2::vst_time_info_flags::{
-        K_VST_BARS_VALID, K_VST_PPQ_POS_VALID, K_VST_TEMPO_VALID, K_VST_TIME_SIG_VALID,
-        K_VST_TRANSPORT_PLAYING,
-    },
+    plugins::api::vst2::vst_time_info_flags::K_VST_TRANSPORT_PLAYING,
 };
 
 // ===================================================================
@@ -265,7 +262,7 @@ impl AtomicVstInfo {
             sample_pos as usize,
             host.sample_rate as usize,
             host.channel_count as usize,
-        ) as f64;
+        );
 
         let time_sig_numerator = *self.time_sig_numerator.lock();
         let time_sig_denominator = *self.time_sig_denominator.lock();

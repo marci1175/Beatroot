@@ -10,7 +10,6 @@ use egui_toast::Toasts;
 use parking_lot::{Mutex, RwLock};
 
 use crate::{
-    app,
     audio::{
         host::{HOST_STATE, HostInformation},
         ingest::create_ingest_thread,
@@ -21,7 +20,7 @@ use crate::{
     plugins::{
         PluginManager,
         api::vst2::{
-            AtomicVstInfo, VstTimeInfo,
+            AtomicVstInfo,
             vst_time_info_flags::{
                 K_VST_BARS_VALID, K_VST_PPQ_POS_VALID, K_VST_TEMPO_VALID, K_VST_TIME_SIG_VALID,
             },
