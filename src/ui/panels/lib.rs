@@ -32,6 +32,8 @@ pub struct GlobalState {
     pub plugin_manager: Arc<RwLock<PluginManager>>,
     pub fx_map: FXMap,
     pub master_playback: Arc<MasterPlaybackThread>,
+    pub numerator: Arc<Mutex<i32>>,
+    pub denominator: Arc<Mutex<i32>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, strum::EnumDiscriminants)]

@@ -20,8 +20,7 @@ use parking_lot::{Mutex, RwLock};
 use rayon::ThreadPoolBuilder;
 use rodio::{Player, SampleRate, Source, mixer::Mixer, queue::queue};
 use rubato::{
-    Async, SincInterpolationParameters, SincInterpolationType, WindowFunction,
-    audioadapter::Adapter,
+    SincInterpolationParameters, SincInterpolationType, WindowFunction, audioadapter::Adapter,
 };
 
 use crate::{

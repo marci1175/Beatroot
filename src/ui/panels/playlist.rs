@@ -44,6 +44,7 @@ const BEAT_WIDTH: usize = 25;
 // Colors
 const BAR_TRACK_SEPARATOR: Color32 = Color32::GRAY;
 const STROKE_WIDTH: f32 = 1.0f32;
+const BAR_HIGHLIGHTER: Color32 = Color32::DARK_GRAY;
 
 // This indicates that the track label is 4 bars wide
 const TRACK_LABEL_WIDTH: usize = BEAT_WIDTH * 4;
@@ -257,6 +258,15 @@ pub fn playlist_ui(
 
     let y_offset_ratio = grid_offset.y / playlist_rect.height();
     let x_offset_ratio = grid_offset.x / playlist_rect.width();
+
+    draw_time_signature(
+        ui,
+        playlist_rect,
+        x_offset_ratio,
+        BEAT_WIDTH as f32,
+        global_state.numerator.clone(),
+        global_state.denominator.clone(),
+    );
 
     // Track the positions of the lines drawn so that we can visualize the preview of a sample in the playlist.
     // `first_visible_beat` tells us which absolute beat number `beat_lines[0]` corresponds to,
@@ -1202,6 +1212,65 @@ fn beat_outlines(
     }
 
     (first_visible_beat, line_positions)
+}
+
+/// Draws beat outlines from the left of the playlist to the right with the step of `beat_width`.
+fn draw_time_signature(
+    ui: &mut Ui,
+    playlist_rect: Rect,
+    x_offset_ratio: f32,
+    beat_width: f32,
+    numerator: Arc<Mutex<i32>>,
+    denominator: Arc<Mutex<i32>>,
+) {
+    let numerator = *numerator.lock();
+    let _denominator = *denominator.lock();
+
+let numerator = numerator as usize;
+
+let label_end = playlist_rect.left() + beat_width * 4.0;
+let beat_zero_x = label_end + x_offset_ratio;
+
+// Absolute beat coordinate at the LEFT EDGE of the playlist.
+let beats_from_zero = (playlist_rect.left() - beat_zero_x) / beat_width;
+
+// Beat containing the left edge.
+let first_beat = beats_from_zero.floor() as isize;
+
+// X position of that beat's boundary.
+let first_beat_x = beat_zero_x + first_beat as f32 * beat_width;
+
+let mut beat = first_beat;
+let mut x = first_beat_x;
+
+while x < playlist_rect.right() {
+    let beat_usize = beat.max(0) as usize;
+
+    let bar = beat_usize / numerator;
+    let highlighted = bar % 2 == 0;
+
+    let beats_until_bar_end =
+        numerator - (beat_usize % numerator);
+
+    let width = beats_until_bar_end as f32 * beat_width;
+
+    if highlighted {
+        let rect = Rect::from_min_max(
+            Pos2::new(x, playlist_rect.top()),
+            Pos2::new(
+                x + width,
+                playlist_rect.bottom(),
+            ),
+        );
+
+        ui.painter()
+            .with_clip_rect(playlist_rect)
+            .rect_filled(rect, 0.0, BAR_HIGHLIGHTER);
+    }
+
+    x += width;
+    beat += beats_until_bar_end as isize;
+}
 }
 
 fn track_label<'a>(

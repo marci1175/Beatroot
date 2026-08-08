@@ -242,11 +242,13 @@ pub fn display_settings_window(
                                         for valid_denom in VALID_TIME_SIG_DENOMINATORS {
                                             ui.selectable_value(
                                                 time_signature_denominator,
-                                                *time_signature_denominator,
+                                                *valid_denom as i32,
                                                 valid_denom.to_string(),
                                             );
                                         }
                                     });
+
+                                    dbg!(&time_signature_denominator);
                             }
                         },
                     );

@@ -365,6 +365,11 @@ impl App for AppRoot {
             });
         });
 
+        let playlist_panel = self.application.panel_states.playlist_panel.read();
+        let numerator = playlist_panel.time_signature_numerator.clone();
+        let denominator = playlist_panel.time_signature_denominator.clone();
+        drop(playlist_panel);
+
         // Draw detachable panels
         for panel in self.application.panels.iter() {
             // Draw/update panel
@@ -377,6 +382,8 @@ impl App for AppRoot {
                     fx_map: self.application.fx_map.clone(),
                     plugin_manager: self.application.plugin_manager.clone(),
                     master_playback: self.application.master_playback_handler.clone(),
+                    numerator: numerator.clone(),
+                    denominator: denominator.clone(),
                 },
                 self.application.sample_audio_handler.clone(),
                 self.application.master_playback_handler.clone(),

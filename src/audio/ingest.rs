@@ -136,7 +136,8 @@ pub fn create_ingest_thread(
                         }
 
                         // Ensure that the sample is cached
-                        if let std::collections::hash_map::Entry::Vacant(e) = cache.entry(sample.id)
+                        if let std::collections::hash_map::Entry::Vacant(_e) =
+                            cache.entry(sample.id)
                         {
                             // Read and cache the sample
                             // We can ignore the errors here since they wouldve been caught when importing them, but we still dont want to panic nevertheless
